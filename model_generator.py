@@ -26,43 +26,67 @@ class ActiveGrid(Grid):
         self.ibound = np.zeros((self.nx, self.ny))
         self.bound_ibound = np.zeros((self.nx, self.ny))
 
-
     def set_ibound(self, polygon):
         """ Sets IBOUND array. """
-        if not np.array_equal(polygon[0], polygon[-1]):
-            polygon = np.append(polygon, [polygon[0]], axis=0)
-
         exterior = Polygon(polygon)
-        boundary = LineString(polygon)
+
         # x, y = exterior.exterior.xy
         # plt.plot(x, y)
         # plt.show()
-
         for i in range(self.ny):
             i_reversed = self.ny - i - 1
             for j in range(self.nx):
                 # Center points of grid cells
                 cell_x = self.xmin + self.dx * .5 + j * self.dx
                 cell_y = self.ymin + self.dy * .5 + i_reversed * self.dy
-                # Grid cell bbox
-                cell = box(
-                    self.xmin + self.dx * j,
-                    self.ymin + self.dy * i_reversed,
-                    self.xmin + self.dx * (j + 1),
-                    self.ymin + self.dy * (i_reversed + 1)
-                    )
                 # Check if central point within a polygon
                 if Point(cell_x, cell_y).within(Polygon(exterior)):
-                    self.ibound[i][j] = 1
+                    self.ibound[j][i] = 1
+
+
+
+class ModelBoundary(object):
+    """ """
+    # chd_spd = {}
+    # any_spd = {}
+
+    def __init__(self, active_grid):
+        self.active_grid = active_grid
+        self.boundaries = {}
+
+    def set_boundaries(self, polygon):
+        """ Assign boundary cells """
+        if not np.array_equal(polygon[0], polygon[-1]):
+            polygon = np.append(polygon, [polygon[0]], axis=0)
+
+        for i in range(len(polygon) - 1):
+            boundary = LineString([polygon[i], polygon[i+1]])
+            self.boundaries[i] = self._intersect_cells(boundary)
+
+
+    def _intersect_cells(self, boundary):
+        """ Modifies Ibound and returns list of cell's row columns """
+        cells_i_j = []
+        for i in range(self.active_grid.ny):
+            i_reversed = self.active_grid.ny - i - 1
+            for j in range(self.active_grid.nx):
+                # Grid cell bbox
+                cell = box(
+                    self.active_grid.xmin + self.active_grid.dx * j,
+                    self.active_grid.ymin + self.active_grid.dy * i_reversed,
+                    self.active_grid.xmin + self.active_grid.dx * (j + 1),
+                    self.active_grid.ymin + self.active_grid.dy * (i_reversed + 1)
+                    )
                 # Check if boundary intersects the cell
                 if boundary.intersects(cell):
-                    self.bound_ibound[i][j] = 1
-                    self.ibound[i][j] = 1
+                    self.active_grid.bound_ibound[j][i] = 1
+                    self.active_grid.ibound[j][i] = 1
+                    cells_i_j.append([i, j])
+
+        return cells_i_j
 
 
-
-
-class RandomPoints(object):
+class VectorSource(object):
     """ Random points for generation of model properties. """
     def __init__(self, xmin, ymin, xmax, ymax, n_points, n_dim=2):
 
@@ -72,11 +96,10 @@ class RandomPoints(object):
             xmax=xmax,
             ymin=ymin,
             ymax=ymax,
-            n_dim=2
+            n_dim=n_dim
             )
         self.convex_hull = self.give_convex_hull(self.rand_points)
         self.polygon = self.give_polygon(self.convex_hull.vertices, self.rand_points)
-
 
     @staticmethod
     def give_rand_points(n_points, xmin, xmax, ymin, ymax, n_dim=2):
@@ -105,4 +128,5 @@ class RandomPoints(object):
         polygon = np.zeros((len(vertices), 2))
         for i, vertex in enumerate(vertices):
             polygon[i] = points[vertex]
+
         return polygon
