@@ -3,7 +3,7 @@
 
 import numpy as np
 from scipy.spatial import ConvexHull
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, LineString, box
 import matplotlib.pyplot as plt
 
 class Grid(object):
@@ -24,35 +24,54 @@ class ActiveGrid(Grid):
     def __init__(self, xmin, ymin, xmax, ymax, nx, ny):
         super().__init__(xmin, ymin, xmax, ymax, nx, ny)
         self.ibound = np.zeros((self.nx, self.ny))
+        self.bound_ibound = np.zeros((self.nx, self.ny))
+
 
     def set_ibound(self, polygon):
         """ Sets IBOUND array. """
+        if not np.array_equal(polygon[0], polygon[-1]):
+            polygon = np.append(polygon, [polygon[0]], axis=0)
+
         exterior = Polygon(polygon)
-        x, y = exterior.exterior.xy
-        plt.plot(x, y)
-        plt.show()
+        boundary = LineString(polygon)
+        # x, y = exterior.exterior.xy
+        # plt.plot(x, y)
+        # plt.show()
 
         for i in range(self.ny):
+            i_reversed = self.ny - i - 1
             for j in range(self.nx):
                 # Center points of grid cells
                 cell_x = self.xmin + self.dx * .5 + j * self.dx
-                cell_y = self.ymax - self.dy * .5 - i * self.dy
+                cell_y = self.ymin + self.dy * .5 + i_reversed * self.dy
+                # Grid cell bbox
+                cell = box(
+                    self.xmin + self.dx * j,
+                    self.ymin + self.dy * i_reversed,
+                    self.xmin + self.dx * (j + 1),
+                    self.ymin + self.dy * (i_reversed + 1)
+                    )
                 # Check if central point within a polygon
                 if Point(cell_x, cell_y).within(Polygon(exterior)):
                     self.ibound[i][j] = 1
+                # Check if boundary intersects the cell
+                if boundary.intersects(cell):
+                    self.bound_ibound[i][j] = 1
+                    self.ibound[i][j] = 1
 
 
-class RandomPoints(Grid):
+
+
+class RandomPoints(object):
     """ Random points for generation of model properties. """
-    def __init__(self, xmin, ymin, xmax, ymax, nx, ny, n_points, n_dim=2):
-        super().__init__(xmin, ymin, xmax, ymax, nx, ny)
+    def __init__(self, xmin, ymin, xmax, ymax, n_points, n_dim=2):
 
         self.rand_points = self.give_rand_points(
             n_points=n_points,
-            xmin=self.xmin,
-            xmax=self.xmax,
-            ymin=self.ymin,
-            ymax=self.ymax,
+            xmin=xmin,
+            xmax=xmax,
+            ymin=ymin,
+            ymax=ymax,
             n_dim=2
             )
         self.convex_hull = self.give_convex_hull(self.rand_points)
@@ -61,7 +80,7 @@ class RandomPoints(Grid):
 
     @staticmethod
     def give_rand_points(n_points, xmin, xmax, ymin, ymax, n_dim=2):
-        """ Returns random 2d points. """
+        """ Returns 2d coordinates of random points. """
         random_points = np.random.rand(n_points, n_dim)
         random_points[:, 0] = random_points[:, 0]*(xmax-xmin)+xmin
         random_points[:, 1] = random_points[:, 1]*(ymax-ymin)+ymin
@@ -76,7 +95,14 @@ class RandomPoints(Grid):
     @staticmethod
     def give_polygon(vertices, points):
         """ Returns polygon object out of the convex hull. """
-        polygon = []
-        for vertex in vertices:
-            polygon.append(points[vertex])
-        return np.array(polygon)
+        polygon = np.zeros((len(vertices), 2))
+        for i, vertex in enumerate(vertices):
+            polygon[i] = points[vertex]
+        return polygon
+
+    @staticmethod
+    def give_boundary(vertices, points):
+        polygon = np.zeros((len(vertices), 2))
+        for i, vertex in enumerate(vertices):
+            polygon[i] = points[vertex]
+        return polygon

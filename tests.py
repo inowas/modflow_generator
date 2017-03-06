@@ -1,9 +1,8 @@
 import unittest
-from model_generator import Grid
-from model_generator import ActiveGrid
-from model_generator import RandomPoints
 import matplotlib.pyplot as plt
-from shapely.geometry import Point, Polygon
+from model_generator import Grid, ActiveGrid, RandomPoints
+
+
 
 class TestModelGenerator(unittest.TestCase):
     """ """
@@ -13,15 +12,15 @@ class TestModelGenerator(unittest.TestCase):
         xmax = 100
         ymin = 0
         ymax = 100
-        nx = 100
-        ny = 100
+        self.nx = 10
+        self.ny = 10
         self.n_points = 10
         self.n_dim = 2
         self.random_points = RandomPoints(
-            xmin, ymin, xmax, ymax, nx, ny, self.n_points, self.n_dim
+            xmin, ymin, xmax, ymax, self.n_points, self.n_dim
             )
-        self.active_grid = ActiveGrid(xmin, ymin, xmax, ymax, nx, ny)
-        self.active_grid.set_ibound(self.random_points.polygon)
+        self.active_grid = ActiveGrid(xmin, ymin, xmax, ymax, self.nx, self.ny)
+        
 
 
     def tearDown(self):
@@ -38,9 +37,24 @@ class TestModelGenerator(unittest.TestCase):
             len(self.random_points.convex_hull.points)
         )
 
+    
+    def test_boundary_ibound(self):
+        """ Vaidation of ibound and boundary """
+        self.active_grid.set_ibound(self.random_points.polygon)
 
-        plt.imshow(self.active_grid.ibound, interpolation="nearest")
-        plt.show()
+        # plt.imshow(self.active_grid.ibound, interpolation="nearest")
+        # plt.show()
+        # plt.imshow(self.active_grid.bound_ibound, interpolation="nearest")
+        # plt.show()
+
+        # If ibound cell is 0, boundary cell has to be 0.
+        # If bondary cell is 1, ibound cell has to be one.
+        for i in range(self.ny):
+            for j in range(self.nx):
+                if self.active_grid.ibound[i][j] == 0:
+                    self.assertEqual(self.active_grid.bound_ibound[i][j], 0)
+                if self.active_grid.bound_ibound[i][j] == 1:
+                    self.assertEqual(self.active_grid.ibound[i][j], 1)
 
 
 if __name__ == '__main__':
