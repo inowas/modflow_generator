@@ -11,7 +11,7 @@ class TestModelGenerator(unittest.TestCase):
         xmax = 100
         ymin = 0
         ymax = 50
-        self.nper = 2
+        self.nper = 200
         perlen = [100]
         nstp = [100]
         steady = True
@@ -22,9 +22,9 @@ class TestModelGenerator(unittest.TestCase):
         self.b_types = {
             'NFL':{},
             'CHD': {'min': 100, 'max': 1000,
-                    'period_min': 3, 'period_max': 10},
+                    'periods': [3, 5, 6, 10]},
             'RIV': {'min': 6, 'max': 10,
-                    'period_min': 2, 'period_max': 10}
+                    'periods': [3, 4, 6, -1]}
             }
 
         self.vector_source = VectorSource(
@@ -36,7 +36,7 @@ class TestModelGenerator(unittest.TestCase):
         )
         self.active_grid = ActiveGrid(xmin, ymin, xmax, ymax, self.nx, self.ny)
         self.model_time = ModelTime(self.nper, perlen, nstp, steady)
-        self.model_boundary = ModelBoundary(self.active_grid, self.model_time, self.b_types)
+        self.model_boundary = ModelBoundary(self.active_grid, self.model_time, self.data_source)
 
     def tearDown(self):
 
@@ -61,10 +61,10 @@ class TestModelGenerator(unittest.TestCase):
         for key in self.b_types:
             if key != 'NFL':
                 self.assertEqual(len(model_data[key]), self.nper)
-        # plt.plot(model_data['RIV'])
-        # plt.show()
-        # plt.plot(model_data['CHD'])
-        # plt.show()
+        plt.plot(model_data['RIV'])
+        plt.show()
+        plt.plot(model_data['CHD'])
+        plt.show()
 
 
     def test_boundary_ibound(self):
@@ -83,15 +83,15 @@ class TestModelGenerator(unittest.TestCase):
         # plt.imshow(self.active_grid.ibound, interpolation="nearest")
         # plt.show()
 
-    def test_boundaries(self):
-        """ Validation of model boundaries """
-        line_segments, nums_of_segments = self.model_boundary.set_line_segments(
-            self.vector_source.polygon
-            )
+    # def test_boundaries(self):
+    #     """ Validation of model boundaries """
+    #     line_segments, nums_of_segments = self.model_boundary.set_line_segments(
+    #         self.vector_source.polygon
+    #         )
 
-        self.assertEqual(len(line_segments), len(self.vector_source.polygon)-1)
-        self.assertEqual(sum(nums_of_segments), len(line_segments))
-        self.assertEqual(len(nums_of_segments), len(self.b_types))
+    #     self.assertEqual(len(line_segments), len(self.vector_source.polygon)-1)
+    #     self.assertEqual(sum(nums_of_segments), len(line_segments))
+    #     self.assertEqual(len(nums_of_segments), len(self.b_types))
 
 
 

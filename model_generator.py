@@ -83,11 +83,9 @@ class DataSource(object):
                         (1,)
                     )
                 else:
-                    print(key)
                     self.b_data[key] = self. set_fourier_data(
                         self.nper,
-                        self.b_types[key]['period_min'],
-                        self.b_types[key]['period_max'],
+                        self.b_types[key]['periods'],
                         self.b_types[key]['min'],
                         self.b_types[key]['max']
                     )
@@ -96,30 +94,27 @@ class DataSource(object):
         return self.b_data
 
     @staticmethod
-    def set_fourier_data(nper, period_min, period_max, min_value, max_value):
+    def set_fourier_data(nper, periods, min_value, max_value):
         """ Returns an inverse of a random descrete Fourier serie """
-        if not period_min in range(nper):
-            period_min = 1
-            print('INVALID PERIOD MIN, set to 1')
-        if not period_max in range(nper):
-            period_max = nper
-            print('INVALID PERIOD MAX, set to nper')
 
         fourier = np.zeros((nper,), dtype=complex)
-        fourier[period_min:period_max] = np.exp(
-            1j * np.random.uniform(
-                0,
-                2*np.pi,
-                (period_max - period_min,)
-            )
-        )
+        for period in periods:
+            if period in range(nper+1):
+                fourier[period] = np.exp(
+                    1j * np.random.uniform(
+                        0,
+                        2*np.pi
+                    )
+                )
+            else:
+                print('WARNING: period', period, 'is out of NPER range')
 
         serie = np.fft.ifft(fourier).real
 
         low = -2 * np.pi / nper
         high = 2 * np.pi / nper
         # denormalize to min..max
-        serie_denorm = ((serie - low) / (high - low)) * (max_value - min_value) + min_value 
+        serie_denorm = ((serie - low) / (high - low)) * (max_value - min_value) + min_value
 
         return serie_denorm
 
@@ -162,7 +157,7 @@ class ModelBoundary(object):
     #         self.model_time.nstp,
     #         self.values,
     #         self.line
-        )
+        # )
 
     @staticmethod
     def construct_spd(nstp, values, cells):
