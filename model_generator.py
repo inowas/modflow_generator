@@ -1,10 +1,10 @@
 # Procedural generation of Modflow groundawter
 # models
 
-import numpy as np
+import numpy as np 
 from scipy.spatial import ConvexHull
 from random import randint
-from .utils import *
+from utils import xy_to_colrow, get_polygon, get_line
 
 
 class Grid(object):
@@ -64,19 +64,72 @@ class ModelTime(object):
         self.nstp = nstp
         self.steady = steady
 
-class TimeSeriesSource(object):
-    """ Time series for the model """
-    def __init__(self, model_time, head_mean):
-        self.model_time = model_time
+class DataSource(object):
+    """ Time series data for the model """
+    def __init__(self, nper, b_types):
+        self.nper = nper
+        self.b_types = b_types
+        self.b_data = {}
 
+    def generate_data(self):
+        """ Generates data series for given b_types """
+
+        for key in self.b_types:
+            if key != 'NFL':
+                if self.nper == 1:
+                    self.b_data[key] = np.random.uniform(
+                        self.b_types[key]['min'],
+                        self.b_types[key]['max'],
+                        (1,)
+                    )
+                else:
+                    print(key)
+                    self.b_data[key] = self. set_fourier_data(
+                        self.nper,
+                        self.b_types[key]['period_min'],
+                        self.b_types[key]['period_max'],
+                        self.b_types[key]['min'],
+                        self.b_types[key]['max']
+                    )
+            else:
+                self.b_data[key] = {}
+        return self.b_data
+
+    @staticmethod
+    def set_fourier_data(nper, period_min, period_max, min_value, max_value):
+        """ Returns an inverse of a random descrete Fourier serie """
+        if not period_min in range(nper):
+            period_min = 1
+            print('INVALID PERIOD MIN, set to 1')
+        if not period_max in range(nper):
+            period_max = nper
+            print('INVALID PERIOD MAX, set to nper')
+
+        fourier = np.zeros((nper,), dtype=complex)
+        fourier[period_min:period_max] = np.exp(
+            1j * np.random.uniform(
+                0,
+                2*np.pi,
+                (period_max - period_min,)
+            )
+        )
+
+        serie = np.fft.ifft(fourier).real
+
+        low = -2 * np.pi / nper
+        high = 2 * np.pi / nper
+        # denormalize to min..max
+        serie_denorm = ((serie - low) / (high - low)) * (max_value - min_value) + min_value 
+
+        return serie_denorm
 
 class ModelBoundary(object):
     """ """
-    # chd_spd = {}
-    # any_spd = {}
-
-    def __init__(self, grid):
+    def __init__(self, grid, model_time, data_source):
         self.grid = grid
+        self.model_time = model_time
+        self.data_source = data_source
+
         self.line = []
         self.nums_of_segments = None
         self.boundaries = {}
@@ -97,10 +150,36 @@ class ModelBoundary(object):
         for i in range(len(line) - 1):
             self.line.append(get_line(line[i], line[i+1]))
 
-        return self.line
+        self.nums_of_segments = self.rand_seg_nums(
+            len(self.line),
+            len(self.data_source.b_data)
+            )
+        return self.line, self.nums_of_segments
     
-    def set_chd_spd(self, num_of_bounds):
-        self.nums_of_segments = self.rand_seg_nums(len(self.line), num_of_bounds)
+    # def set_chd(self):
+    #     values = self.data_source.b_data[]
+    #     spd = self.construct_spd(
+    #         self.model_time.nstp,
+    #         self.values,
+    #         self.line
+        )
+
+    @staticmethod
+    def construct_spd(nstp, values, cells):
+        """ Returns SPD dictionary """
+        spd = {}
+        for step in range(nstp):
+            step_data = []
+            for i, cell in enumerate(cells):
+                step_data.append(
+                    cell[0],
+                    cell[1],
+                    cell[2],
+                    values[step][i][0],
+                    values[step][i][1]
+                )
+            spd[step] = step_data
+        return spd
 
 
     @staticmethod
