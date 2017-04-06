@@ -47,6 +47,7 @@ class ActiveGrid(Grid):
         for i in range(len(polygon) - 1):
             for j in get_line(polygon[i], polygon[i+1]):
                 line_grid.append(j)
+        # print(len(line_grid))
         # Add line grid cells to polygon grid
         for point in line_grid:
             polygon_grid[point[1], point[0]] = 1
@@ -118,6 +119,7 @@ class DataSource(object):
 
         return serie_denorm
 
+
 class ModelBoundary(object):
     """ """
     def __init__(self, grid, model_time, data_source):
@@ -125,12 +127,21 @@ class ModelBoundary(object):
         self.model_time = model_time
         self.data_source = data_source
 
-        self.line = []
-        self.nums_of_segments = None
-        self.boundaries = {}
+        self.line_segments = {
+            'NFL': [],
+            'CHD': [],
+            'RIV': []
+        }
+        self.boundaries_spd = {
+            'NFL': None,
+            'CHD': None,
+            'RIV': None
+        }
 
     def set_line_segments(self, line):
         """ Returns line segments in col/rows """
+        line_row_col = []
+        # transform x, y coordinates to columns and rows
         for i, point in enumerate(line):
             point = xy_to_colrow(
                 point[0],
@@ -141,38 +152,84 @@ class ModelBoundary(object):
                 self.grid.dy
             )
             line[i] = point
-
+        # get cells intersected by line segments
         for i in range(len(line) - 1):
-            self.line.append(get_line(line[i], line[i+1]))
-
-        self.nums_of_segments = self.rand_seg_nums(
-            len(self.line),
+            line_row_col.append(get_line(line[i], line[i+1]))
+        # delete last cell of each segment
+        for i in line_row_col:
+            del i[-1]
+        # generate number of segments for each boundary
+        nums_of_segments = self.rand_seg_nums(
+            len(line_row_col),
             len(self.data_source.b_data)
             )
-        return self.line, self.nums_of_segments
-    
-    # def set_chd(self):
-    #     values = self.data_source.b_data[]
-    #     spd = self.construct_spd(
-    #         self.model_time.nstp,
-    #         self.values,
-    #         self.line
-        # )
+        # assign cells to each boundary type
+        for idx, key in enumerate(self.data_source.b_data):
+            for i in range(nums_of_segments[idx]):
+                self.line_segments[key].extend(
+                    line_row_col[i]
+                    )
+            del line_row_col[:nums_of_segments[idx]]
+
+        return self.line_segments
+
+    def set_boundaries_spd(self):
+        """ Set boundaries's spd data """
+        for key in self.data_source.b_data:
+            if key == 'NFL':
+                self.boundaries_spd['NFL'] = self.construct_spd(
+                    nper=self.model_time.nper,
+                    cells=self.line_segments['NFL']
+                )
+            elif key == 'CHD':
+                self.boundaries_spd['CHD'] = self.construct_spd(
+                    nper=self.model_time.nper,
+                    values_1=self.data_source.b_data['CHD'],
+                    values_2=self.data_source.b_data['CHD'],
+                    cells=self.line_segments['CHD']
+                )
+            elif key == 'RIV':
+                self.boundaries_spd['RIV'] = self.construct_spd(
+                    nper=self.model_time.nper,
+                    values_1=self.data_source.b_data['RIV'],
+                    values_2=self.data_source.b_data['RIV'],
+                    cells=self.line_segments['RIV']
+                )
 
     @staticmethod
-    def construct_spd(nstp, values, cells):
+    def construct_spd(nper, cells, values_1=None, values_2=None):
         """ Returns SPD dictionary """
         spd = {}
-        for step in range(nstp):
+        for step in range(nper):
             step_data = []
-            for i, cell in enumerate(cells):
-                step_data.append(
-                    cell[0],
-                    cell[1],
-                    cell[2],
-                    values[step][i][0],
-                    values[step][i][1]
-                )
+            for cell in cells:
+                if values_1 is not None and values_2 is not None:
+                    step_data.append(
+                        [
+                            1,
+                            cell[0],
+                            cell[1],
+                            values_1[step],
+                            values_2[step]
+                        ]
+                    )
+                elif values_1 is not None:
+                    step_data.append(
+                        [
+                            1,
+                            cell[0],
+                            cell[1],
+                            values_1[step]
+                        ]
+                    )
+                elif values_1 is None and values_2 is None:
+                    step_data.append(
+                        [
+                            1,
+                            cell[0],
+                            cell[1]
+                        ]
+                    )
             spd[step] = step_data
         return spd
 
