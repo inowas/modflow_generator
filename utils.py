@@ -3,6 +3,7 @@ from matplotlib.path import Path
 
 def xy_to_colrow(x, y, start_x, start_y, dx, dy):
     """ Transform x, y coordinates to column/row """
+    # print(x,start_x, dx)
     col = int((x - start_x)/dx)
     row = int((y - start_y)/dy)
     return col, row

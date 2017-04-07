@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 import matplotlib.pyplot as plt
-from model_generator import ActiveGrid, ModelTime, DataSource, ModelBoundary, VectorSource
+from model_generator import ActiveGrid, ModelTime, DataSource, ModelBoundary, VectorSource, ModelLayer, PropSource
 
 
 class TestModelGenerator(unittest.TestCase):
@@ -9,15 +9,15 @@ class TestModelGenerator(unittest.TestCase):
 
     def setUp(self):
         self.xmin = 0
-        self.xmax = 100
+        self.xmax = 10
         self.ymin = 0
-        self.ymax = 50
+        self.ymax = 10
         self.nper = 200
         self.perlen = [100]
         self.nstp = [100]
         self.steady = True
         self.nx = 100
-        self.ny = 50
+        self.ny = 100
         self.n_points = 10
         self.n_dim = 2
         self.b_types = {
@@ -25,15 +25,26 @@ class TestModelGenerator(unittest.TestCase):
             'CHD': {'min': 100, 'max': 1000,
                     'periods': [3, 5, 6, 10]},
             'RIV': {'min': 6, 'max': 10,
-                    'periods': [3, 4, 6, -1]}
+                    'periods': [3, 4, 6]}
             }
+        self.layer_props_params = {
+            'hk': {'min': 0.1, 'max': 10.},
+            'hani': {'min': 0.5, 'max': 2},
+            'vka': {'min': 1, 'max': 10},
+            'top': {'min': 100, 'max': 150},
+            'botm': {'min': 0, 'max': 50},
+        }
 
         self.vector_source = VectorSource(
             self.xmin, self.ymin, self.xmax, self.ymax, self.n_points, self.n_dim
             )
+        # print(self.vector_source.polygon)
         self.data_source = DataSource(
             self.nper,
             self.b_types
+        )
+        self.properties_source = PropSource(
+            self.layer_props_params, self.vector_source.random_points
         )
         self.active_grid = ActiveGrid(
             self.xmin, self.ymin, self.xmax, self.ymax, self.nx, self.ny
@@ -44,13 +55,18 @@ class TestModelGenerator(unittest.TestCase):
         self.model_boundary = ModelBoundary(
             self.active_grid, self.model_time, self.data_source
             )
+        self.model_layer = ModelLayer(
+            self.properties_source, self.active_grid
+        )
 
         self.active_grid.set_ibound(self.vector_source.polygon)
         self.data_source.generate_data()
         self.model_boundary.set_line_segments(
             self.vector_source.polygon
             )
+        self.properties_source.set_params_data()
         self.model_boundary.set_boundaries_spd()
+        self.model_layer.set_properties()
 
     def tearDown(self):
 
@@ -93,7 +109,7 @@ class TestModelGenerator(unittest.TestCase):
                 if self.active_grid.bound_ibound[i][j] == 1:
                     self.assertEqual(self.active_grid.ibound[i][j], 1)
 
-        # plt.imshow(self.active_grid.ibound, interpolation="nearest")
+        # plt.imshow(self.active_grid.bound_ibound, interpolation="nearest")
         # plt.show()
 
     def test_boundary_segments(self):
@@ -106,8 +122,6 @@ class TestModelGenerator(unittest.TestCase):
             total_cells,
             np.count_nonzero(self.active_grid.bound_ibound)
             )
-
-        # print(self.model_boundary.line_segments)
 
     def test_boundary_spd(self):
         """ Validate boundaries's SPD """
@@ -123,6 +137,59 @@ class TestModelGenerator(unittest.TestCase):
                 len(self.model_boundary.boundaries_spd[key]),
                 self.nper
             )
+
+    def test_property_source(self):
+        """ Validate creation of random properties """
+        self.assertEqual(
+            len(self.properties_source.params_data),
+            len(self.layer_props_params)
+        )
+        for key in self.properties_source.params_data:
+            self.assertTrue(
+                len(self.properties_source.params_data[key]['z']) == \
+                len(self.properties_source.params_data[key]['x']) == \
+                len(self.properties_source.params_data[key]['y']) == \
+                len(self.vector_source.random_points)
+            )
+            for z in self.properties_source.params_data[key]['z']:
+                self.assertTrue(
+                    z <= self.layer_props_params[key]['max']
+                )
+                self.assertTrue(
+                    z >= self.layer_props_params[key]['min']
+                )
+
+    def test_prop_rasters(self):
+        """ Validate generated property rasters """
+        plt.imshow(
+            self.active_grid.ibound, interpolation='nearest'
+            )
+        plt.colorbar()
+        plt.show()
+        plt.imshow(
+            self.model_layer.properties['hk'], interpolation='nearest'
+            )
+        plt.colorbar()
+        plt.show()
+        plt.imshow(
+            self.model_layer.properties['botm'], interpolation='nearest'
+            )
+        plt.colorbar()
+        plt.show()
+
+        # plt.imshow(
+        #     self.active_grid.bound_ibound, interpolation='nearest'
+        #     )
+        # plt.colorbar()
+        # plt.show()
+        
+        # plt.colorbar()
+        # plt.show()
+        # plt.imshow(
+        #     self.model_layer.properties['top'], interpolation='nearest'
+        #     )
+        # plt.colorbar()
+        # plt.show()
 
 
 

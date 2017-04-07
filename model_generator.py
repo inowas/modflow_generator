@@ -3,6 +3,8 @@
 
 import numpy as np 
 from scipy.spatial import ConvexHull
+# from scipy.interpolate import griddata
+from scipy.interpolate import Rbf
 from random import randint
 from utils import xy_to_colrow, get_polygon, get_line
 
@@ -26,12 +28,14 @@ class ActiveGrid(Grid):
         super().__init__(xmin, ymin, xmax, ymax, nx, ny)
         self.ibound = np.zeros((self.ny, self.nx))
         self.bound_ibound = np.zeros((self.ny, self.nx))
+        self.ibound_mask = np.zeros((self.ny, self.nx), dtype=bool)
 
     def set_ibound(self, polygon):
         """ Sets IBOUND array. """
         # Translate polygon coolrdinates to col/row
+        polygon_converted = []
         for i, point in enumerate(polygon):
-            point = xy_to_colrow(
+            point_converted = xy_to_colrow(
                 point[0],
                 point[1],
                 self.xmin,
@@ -39,13 +43,13 @@ class ActiveGrid(Grid):
                 self.dx,
                 self.dy
             )
-            polygon[i] = point
+            polygon_converted.append(point_converted)
         # 2D Array
-        polygon_grid = get_polygon(polygon, self.nx, self.ny)
+        polygon_grid = get_polygon(polygon_converted, self.nx, self.ny)
         # Cols, rows, intersected by line
         line_grid = []
-        for i in range(len(polygon) - 1):
-            for j in get_line(polygon[i], polygon[i+1]):
+        for i in range(len(polygon_converted) - 1):
+            for j in get_line(polygon_converted[i], polygon_converted[i+1]):
                 line_grid.append(j)
         # print(len(line_grid))
         # Add line grid cells to polygon grid
@@ -54,6 +58,7 @@ class ActiveGrid(Grid):
             self.bound_ibound[point[1], point[0]] = 1
 
         self.ibound = polygon_grid
+        self.ibound_mask = self.ibound > 0
         return self.ibound
 
 
@@ -65,59 +70,70 @@ class ModelTime(object):
         self.nstp = nstp
         self.steady = steady
 
-class DataSource(object):
-    """ Time series data for the model """
-    def __init__(self, nper, b_types):
-        self.nper = nper
-        self.b_types = b_types
-        self.b_data = {}
 
-    def generate_data(self):
-        """ Generates data series for given b_types """
+class ModelLayer(object):
+    """ Layer properties of the model """
+    default_properties = {
+        'laytyp': 0,
+        'hani': 1.0,
+        'vka': 1.0,
+        'hk': 1.0,
+        'ss': 1e-5,
+        'sy': 0.15,
+        'top': 0,
+        'botm': -10
+    }
+    def __init__(self, prop_source, grid):
+        self.grid = grid
+        self.prop_source = prop_source
+        self.properties = {
+            'laytyp': 0,
+            'hani': 1.0,
+            'vka': 1.0,
+            'hk': 1.0,
+            'ss': 1e-5,
+            'sy': 0.15,
+            'top': 0,
+            'botm': -10
+        }
 
-        for key in self.b_types:
-            if key != 'NFL':
-                if self.nper == 1:
-                    self.b_data[key] = np.random.uniform(
-                        self.b_types[key]['min'],
-                        self.b_types[key]['max'],
-                        (1,)
-                    )
-                else:
-                    self.b_data[key] = self. set_fourier_data(
-                        self.nper,
-                        self.b_types[key]['periods'],
-                        self.b_types[key]['min'],
-                        self.b_types[key]['max']
-                    )
-            else:
-                self.b_data[key] = {}
-        return self.b_data
+    def set_properties(self):
+        """ Assign propeties to layer """
+        for key in self.prop_source.params_data:
+            property_grid = self.interpolate(
+                self.grid,
+                self.prop_source.params_data[key]['x'],
+                self.prop_source.params_data[key]['y'],
+                self.prop_source.params_data[key]['z']
+            )
+            # property_grid[self.grid.ibound_mask == False] = np.nan
+            # print(property_grid)
+            self.properties[key] = self.normalize(
+                property_grid,
+                self.prop_source.params[key]['min'],
+                self.prop_source.params[key]['max'],
+                self.grid.ibound_mask
+            )
+
+    def interpolate(self, grid, x, y, z):
+        """ Interpolate point data to coverage """
+        x = ((np.array(x) - self.grid.xmin) / self.grid.dx).astype(int)
+        y = ((np.array(y) - self.grid.ymin) / self.grid.dy).astype(int)
+        rbfi = Rbf(x, y, z)
+
+        grid_x, grid_y = np.meshgrid(np.arange(self.grid.nx), np.arange(self.grid.ny))
+        grid_z = rbfi(grid_x, grid_y)
+
+        return grid_z
 
     @staticmethod
-    def set_fourier_data(nper, periods, min_value, max_value):
-        """ Returns an inverse of a random descrete Fourier serie """
+    def normalize(grid, n_min, n_max, mask):
+        """ Normalizes grid to given min max """
+        norm_grid = (n_max - n_min) * \
+                    (grid - grid[mask].min()) / (grid[mask].max() - \
+                    grid[mask].min()) + n_min
 
-        fourier = np.zeros((nper,), dtype=complex)
-        for period in periods:
-            if period in range(nper+1):
-                fourier[period] = np.exp(
-                    1j * np.random.uniform(
-                        0,
-                        2*np.pi
-                    )
-                )
-            else:
-                print('WARNING: period', period, 'is out of NPER range')
-
-        serie = np.fft.ifft(fourier).real
-
-        low = -2 * np.pi / nper
-        high = 2 * np.pi / nper
-        # denormalize to min..max
-        serie_denorm = ((serie - low) / (high - low)) * (max_value - min_value) + min_value
-
-        return serie_denorm
+        return norm_grid
 
 
 class ModelBoundary(object):
@@ -142,8 +158,9 @@ class ModelBoundary(object):
         """ Returns line segments in col/rows """
         line_row_col = []
         # transform x, y coordinates to columns and rows
+        line_converted = []
         for i, point in enumerate(line):
-            point = xy_to_colrow(
+            point_converted = xy_to_colrow(
                 point[0],
                 point[1],
                 self.grid.xmin,
@@ -151,10 +168,10 @@ class ModelBoundary(object):
                 self.grid.dx,
                 self.grid.dy
             )
-            line[i] = point
+            line_converted.append(point_converted)
         # get cells intersected by line segments
-        for i in range(len(line) - 1):
-            line_row_col.append(get_line(line[i], line[i+1]))
+        for i in range(len(line_converted) - 1):
+            line_row_col.append(get_line(line_converted[i], line_converted[i+1]))
         # delete last cell of each segment
         for i in line_row_col:
             del i[-1]
@@ -257,7 +274,7 @@ class VectorSource(object):
     """ Random points for generation of model properties. """
     def __init__(self, xmin, ymin, xmax, ymax, n_points, n_dim=2):
 
-        self.rand_points = self.give_rand_points(
+        self.random_points = self.give_rand_points(
             n_points=n_points,
             xmin=xmin,
             xmax=xmax,
@@ -265,9 +282,8 @@ class VectorSource(object):
             ymax=ymax,
             n_dim=n_dim
             )
-        self.convex_hull = self.give_convex_hull(self.rand_points)
-        self.polygon = self.give_polygon(self.convex_hull.vertices, self.rand_points)
-        # self.boundary = self.give_boundary()
+        self.convex_hull = self.give_convex_hull(self.random_points)
+        self.polygon = self.give_polygon(self.convex_hull.vertices, self.random_points)
 
     @staticmethod
     def give_rand_points(n_points, xmin, xmax, ymin, ymax, n_dim=2):
@@ -295,3 +311,83 @@ class VectorSource(object):
             polygon.append(polygon[0])
         return polygon
 
+
+class DataSource(object):
+    """ Time series data for the model """
+    def __init__(self, nper, b_types):
+        self.nper = nper
+        self.b_types = b_types
+        self.b_data = {}
+
+    def generate_data(self):
+        """ Generates data series for given b_types """
+
+        for key in self.b_types:
+            if key != 'NFL':
+                if self.nper == 1:
+                    self.b_data[key] = np.random.uniform(
+                        self.b_types[key]['min'],
+                        self.b_types[key]['max'],
+                        (1,)
+                    )
+                else:
+                    self.b_data[key] = self. set_fourier_data(
+                        self.nper,
+                        self.b_types[key]['periods'],
+                        self.b_types[key]['min'],
+                        self.b_types[key]['max']
+                    )
+            else:
+                self.b_data[key] = {}
+        return self.b_data
+
+    @staticmethod
+    def set_fourier_data(nper, periods, min_value, max_value):
+        """ Returns an inverse of a random descrete Fourier serie """
+
+        fourier = np.zeros((nper,), dtype=complex)
+        for period in periods:
+            if period in range(nper+1):
+                fourier[period] = np.exp(
+                    1j * np.random.uniform(
+                        0,
+                        2*np.pi
+                    )
+                )
+            else:
+                print('WARNING: period', period, 'is out of NPER range')
+
+        serie = np.fft.ifft(fourier).real
+
+        low = -2 * np.pi / nper
+        high = 2 * np.pi / nper
+        # denormalize to min..max
+        serie_denorm = ((serie - low) / (high - low)) * (max_value - min_value) + min_value
+
+        return serie_denorm
+
+
+class PropSource(object):
+    """ Source of property data for model layers """
+    def __init__(self, params, random_points):
+        self.params = params
+        self.rand_points = random_points
+        self.params_data = {}
+    
+    def set_params_data(self):
+        """ Set random parameters data X, Y, Z """
+        for key in self.params:
+            self.params_data[key] = {}
+            self.params_data[key]['x'] = [i[0] for i in self.rand_points]
+            self.params_data[key]['y'] = [i[1] for i in self.rand_points]
+            self.params_data[key]['z'] = self.generate_random_data(
+                min_=self.params[key]['min'],
+                max_=self.params[key]['max'],
+                len_=len(self.rand_points)
+            )
+        return self.params_data
+    
+    @staticmethod
+    def generate_random_data(min_, max_, len_):
+        """ Returns array of random values """
+        return np.random.uniform(min_, max_, len_)
