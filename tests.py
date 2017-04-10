@@ -1,7 +1,8 @@
 import unittest
 import numpy as np
+import flopy
 import matplotlib.pyplot as plt
-from model_generator import ActiveGrid, ModelTime, DataSource, ModelBoundary, VectorSource, ModelLayer, PropSource
+from model_generator import Solver, Model, ActiveGrid, ModelTime, DataSource, ModelBoundary, VectorSource, ModelLayer, PropSource
 
 
 class TestModelGenerator(unittest.TestCase):
@@ -12,6 +13,7 @@ class TestModelGenerator(unittest.TestCase):
         self.xmax = 10
         self.ymin = 0
         self.ymax = 10
+        self.nlay = 1
         self.nper = 200
         self.perlen = [100]
         self.nstp = [100]
@@ -34,11 +36,12 @@ class TestModelGenerator(unittest.TestCase):
             'top': {'min': 100, 'max': 150},
             'botm': {'min': 0, 'max': 50},
         }
+        self.headtol = 0.01
+        self.maxiterout = 100
 
         self.vector_source = VectorSource(
             self.xmin, self.ymin, self.xmax, self.ymax, self.n_points, self.n_dim
             )
-        # print(self.vector_source.polygon)
         self.data_source = DataSource(
             self.nper,
             self.b_types
@@ -47,7 +50,7 @@ class TestModelGenerator(unittest.TestCase):
             self.layer_props_params, self.vector_source.random_points
         )
         self.active_grid = ActiveGrid(
-            self.xmin, self.ymin, self.xmax, self.ymax, self.nx, self.ny
+            self.xmin, self.ymin, self.xmax, self.ymax, self.nx, self.ny, self.nlay
             )
         self.model_time = ModelTime(
             self.nper, self.perlen, self.nstp, self.steady
@@ -58,6 +61,7 @@ class TestModelGenerator(unittest.TestCase):
         self.model_layer = ModelLayer(
             self.properties_source, self.active_grid
         )
+        self.model_solver = Solver(self.headtol, self.maxiterout)
 
         self.active_grid.set_ibound(self.vector_source.polygon)
         self.data_source.generate_data()
@@ -67,6 +71,33 @@ class TestModelGenerator(unittest.TestCase):
         self.properties_source.set_params_data()
         self.model_boundary.set_boundaries_spd()
         self.model_layer.set_properties()
+
+        self.model_name = 'model_1'
+        self.workspace = 'models\\' + self.model_name
+        self.version = 'mfnwt'
+        self.verbose = True
+
+        self.model = Model(
+            model_name=self.model_name,
+            workspace=self.workspace,
+            version=self.version,
+            verbose=self.verbose,
+            model_solver=self.model_solver,
+            model_time=self.model_time,
+            model_grid=self.active_grid,
+            model_boundary=self.model_boundary,
+            model_layer=self.model_layer,
+        )
+
+        self.mf = self.model.get_mf()
+        self.nwt = self.model.get_nwt(self.mf)
+        self.dis = self.model.get_dis(self.mf)
+        self.bas = self.model.get_bas(self.mf)
+        self.lpf = self.model.get_lpf(self.mf)
+        self.chd = self.model.get_chd(self.mf)
+        self.riv = self.model.get_riv(self.mf)
+
+
 
     def tearDown(self):
 

@@ -3,15 +3,105 @@
 
 import numpy as np 
 from scipy.spatial import ConvexHull
-# from scipy.interpolate import griddata
 from scipy.interpolate import Rbf
 from random import randint
-from utils import xy_to_colrow, get_polygon, get_line
+import flopy
+from utils import xy_to_colrow, get_polygon_grid, get_line
 
+
+class Model(object):
+    """ Flopy Model class """
+    def __init__(self, model_name, workspace, version, verbose, model_solver,
+                 model_time, model_grid, model_boundary, model_layer):
+        self.model_name = model_name
+        self.workspace = workspace
+        self.version = version
+        self.verbose = verbose
+        self.model_solver = model_solver
+        self.model_time = model_time
+        self.model_grid = model_grid
+        self.model_boundary = model_boundary
+        self.model_layer = model_layer
+
+    def get_mf(self):
+        mf = flopy.modflow.Modflow(
+            modelname=self.model_name,
+            version=self.version,
+            model_ws=self.workspace,
+            verbose=self.verbose
+        )
+        return mf
+    
+    def get_nwt(self, mf):
+        nwt = flopy.modflow.ModflowNwt(
+            mf,
+            headtol=self.model_solver.headtol,
+            maxiterout=self.model_solver.maxiterout
+        )
+        return nwt
+
+    def get_dis(self, mf):
+        dis = flopy.modflow.ModflowDis(
+            mf,
+            nlay=self.model_grid.nlay,
+            ncol=self.model_grid.nx,
+            nrow=self.model_grid.ny,
+            delr=self.model_grid.dy,
+            delc=self.model_grid.dx,
+            nper=self.model_time.nper,
+            perlen=self.model_time.perlen,
+            nstp=self.model_time.nstp,
+            steady=self.model_time.steady,
+            top=self.model_layer.properties['top'],
+            botm=self.model_layer.properties['botm']
+        )
+        return dis
+    
+    def get_bas(self, mf):
+        bas = flopy.modflow.ModflowBas(
+            mf,
+            ibound=self.model_grid.ibound,
+            strt=self.model_layer.properties['strt']
+        )
+        return bas
+    
+    def get_lpf(self, mf):
+        lpf = flopy.modflow.ModflowLpf(
+            mf,
+            laytyp=self.model_layer.properties['laytyp'],
+            chani=self.model_layer.properties['chani'],
+            hani=self.model_layer.properties['hani'],
+            vka=self.model_layer.properties['vka'],
+            hk=self.model_layer.properties['hk'],
+            ss=self.model_layer.properties['ss'],
+            sy=self.model_layer.properties['sy'],
+        )
+        return lpf
+
+    def get_chd(self, mf):
+        chf = flopy.modflow.ModflowChd(
+            mf,
+            stress_period_data=self.model_boundary.boundaries_spd['CHD']
+        )
+        return chf
+    
+    def get_riv(self, mf):
+        riv = flopy.modflow.ModflowRiv(
+            mf,
+            stress_period_data=self.model_boundary.boundaries_spd['RIV']
+        )
+        return riv
+
+
+class Solver(object):
+    """ Modflow NWT input """
+    def __init__(self, headtol, maxiterout):
+        self.headtol = headtol
+        self.maxiterout = maxiterout
 
 class Grid(object):
     """ Model grid  """
-    def __init__(self, xmin, ymin, xmax, ymax, nx, ny):
+    def __init__(self, xmin, ymin, xmax, ymax, nx, ny, nlay):
         self.xmin = float(xmin)
         self.ymin = float(ymin)
         self.xmax = float(xmax)
@@ -20,12 +110,13 @@ class Grid(object):
         self.ny = ny
         self.dx = (self.xmax - self.xmin) / self.nx
         self.dy = (self.ymax - self.ymin) / self.ny
+        self.nlay = nlay
 
 
 class ActiveGrid(Grid):
     """ Extends Model grid class. """
-    def __init__(self, xmin, ymin, xmax, ymax, nx, ny):
-        super().__init__(xmin, ymin, xmax, ymax, nx, ny)
+    def __init__(self, xmin, ymin, xmax, ymax, nx, ny, nlay):
+        super().__init__(xmin, ymin, xmax, ymax, nx, ny, nlay)
         self.ibound = np.zeros((self.ny, self.nx))
         self.bound_ibound = np.zeros((self.ny, self.nx))
         self.ibound_mask = np.zeros((self.ny, self.nx), dtype=bool)
@@ -45,7 +136,7 @@ class ActiveGrid(Grid):
             )
             polygon_converted.append(point_converted)
         # 2D Array
-        polygon_grid = get_polygon(polygon_converted, self.nx, self.ny)
+        polygon_grid = get_polygon_grid(polygon_converted, self.nx, self.ny)
         # Cols, rows, intersected by line
         line_grid = []
         for i in range(len(polygon_converted) - 1):
@@ -73,16 +164,6 @@ class ModelTime(object):
 
 class ModelLayer(object):
     """ Layer properties of the model """
-    default_properties = {
-        'laytyp': 0,
-        'hani': 1.0,
-        'vka': 1.0,
-        'hk': 1.0,
-        'ss': 1e-5,
-        'sy': 0.15,
-        'top': 0,
-        'botm': -10
-    }
     def __init__(self, prop_source, grid):
         self.grid = grid
         self.prop_source = prop_source
@@ -94,7 +175,8 @@ class ModelLayer(object):
             'ss': 1e-5,
             'sy': 0.15,
             'top': 0,
-            'botm': -10
+            'botm': -10,
+            'strt': 0
         }
 
     def set_properties(self):
@@ -106,8 +188,7 @@ class ModelLayer(object):
                 self.prop_source.params_data[key]['y'],
                 self.prop_source.params_data[key]['z']
             )
-            # property_grid[self.grid.ibound_mask == False] = np.nan
-            # print(property_grid)
+
             self.properties[key] = self.normalize(
                 property_grid,
                 self.prop_source.params[key]['min'],
@@ -119,6 +200,7 @@ class ModelLayer(object):
         """ Interpolate point data to coverage """
         x = ((np.array(x) - self.grid.xmin) / self.grid.dx).astype(int)
         y = ((np.array(y) - self.grid.ymin) / self.grid.dy).astype(int)
+
         rbfi = Rbf(x, y, z)
 
         grid_x, grid_y = np.meshgrid(np.arange(self.grid.nx), np.arange(self.grid.ny))
@@ -127,11 +209,11 @@ class ModelLayer(object):
         return grid_z
 
     @staticmethod
-    def normalize(grid, n_min, n_max, mask):
+    def normalize(grid, new_min, new_max, mask):
         """ Normalizes grid to given min max """
-        norm_grid = (n_max - n_min) * \
+        norm_grid = (new_max - new_min) * \
                     (grid - grid[mask].min()) / (grid[mask].max() - \
-                    grid[mask].min()) + n_min
+                    grid[mask].min()) + new_min
 
         return norm_grid
 
@@ -386,7 +468,7 @@ class PropSource(object):
                 len_=len(self.rand_points)
             )
         return self.params_data
-    
+
     @staticmethod
     def generate_random_data(min_, max_, len_):
         """ Returns array of random values """
