@@ -6,16 +6,17 @@ from scipy.spatial import ConvexHull
 from scipy.interpolate import Rbf
 from random import randint
 import flopy
-from utils import xy_to_colrow, get_polygon_grid, get_line
+from utils import xy_to_colrow, get_polygon_grid, get_line_grid
 
 
 class Model(object):
     """ Flopy Model class """
-    def __init__(self, model_name, workspace, version, verbose, model_solver,
+    def __init__(self, model_name, workspace, version, exe_name, verbose, model_solver,
                  model_time, model_grid, model_boundary, model_layer):
         self.model_name = model_name
         self.workspace = workspace
         self.version = version
+        self.exe_name = exe_name
         self.verbose = verbose
         self.model_solver = model_solver
         self.model_time = model_time
@@ -28,6 +29,7 @@ class Model(object):
             modelname=self.model_name,
             version=self.version,
             model_ws=self.workspace,
+            exe_name=self.exe_name,
             verbose=self.verbose
         )
         return mf
@@ -52,19 +54,19 @@ class Model(object):
             perlen=self.model_time.perlen,
             nstp=self.model_time.nstp,
             steady=self.model_time.steady,
-            top=self.model_layer.properties['top'],
+            top=self.model_layer.properties['top'][0],
             botm=self.model_layer.properties['botm']
         )
         return dis
-    
+
     def get_bas(self, mf):
         bas = flopy.modflow.ModflowBas(
             mf,
-            ibound=self.model_grid.ibound,
+            ibound=self.model_grid.ibound_reshaped,
             strt=self.model_layer.properties['strt']
         )
         return bas
-    
+
     def get_lpf(self, mf):
         lpf = flopy.modflow.ModflowLpf(
             mf,
@@ -79,17 +81,26 @@ class Model(object):
         return lpf
 
     def get_chd(self, mf):
+        if len(self.model_boundary.boundaries_spd['CHD'][0]) == 0:
+            
+            return None
+
         chf = flopy.modflow.ModflowChd(
             mf,
             stress_period_data=self.model_boundary.boundaries_spd['CHD']
         )
+        # print(self.model_boundary.boundaries_spd['CHD'])
         return chf
-    
+
     def get_riv(self, mf):
+        if len(self.model_boundary.boundaries_spd['RIV'][0]) == 0:
+            
+            return None
         riv = flopy.modflow.ModflowRiv(
             mf,
             stress_period_data=self.model_boundary.boundaries_spd['RIV']
         )
+        # print(self.model_boundary.boundaries_spd['RIV'][0])
         return riv
 
 
@@ -140,7 +151,7 @@ class ActiveGrid(Grid):
         # Cols, rows, intersected by line
         line_grid = []
         for i in range(len(polygon_converted) - 1):
-            for j in get_line(polygon_converted[i], polygon_converted[i+1]):
+            for j in get_line_grid(polygon_converted[i], polygon_converted[i+1]):
                 line_grid.append(j)
         # print(len(line_grid))
         # Add line grid cells to polygon grid
@@ -151,6 +162,10 @@ class ActiveGrid(Grid):
         self.ibound = polygon_grid
         self.ibound_mask = self.ibound > 0
         return self.ibound
+    
+    @property
+    def ibound_reshaped(self):
+        return self.ibound.reshape(self.nlay, self.ny, self.nx)
 
 
 class ModelTime(object):
@@ -176,14 +191,20 @@ class ModelLayer(object):
             'sy': 0.15,
             'top': 0,
             'botm': -10,
-            'strt': 0
+            'strt': 100,
+            'chani': 0
         }
 
     def set_properties(self):
         """ Assign propeties to layer """
         for key in self.prop_source.params_data:
             property_grid = self.interpolate(
-                self.grid,
+                self.grid.xmin,
+                self.grid.ymin,
+                self.grid.dx,
+                self.grid.dy,
+                self.grid.nx,
+                self.grid.ny,
                 self.prop_source.params_data[key]['x'],
                 self.prop_source.params_data[key]['y'],
                 self.prop_source.params_data[key]['z']
@@ -196,30 +217,48 @@ class ModelLayer(object):
                 self.grid.ibound_mask
             )
 
-    def interpolate(self, grid, x, y, z):
-        """ Interpolate point data to coverage """
-        x = ((np.array(x) - self.grid.xmin) / self.grid.dx).astype(int)
-        y = ((np.array(y) - self.grid.ymin) / self.grid.dy).astype(int)
-
+    @staticmethod
+    def interpolate(xmin, ymin, dx, dy, nx, ny, x, y, z):
+        """ Interpolate point data to grid coverage """
+        # convert coordinates to cols, rows
+        x = ((np.array(x) - xmin) / dx).astype(int)
+        y = ((np.array(y) - ymin) / dy).astype(int)
+        # scipy's RBF interpolation
         rbfi = Rbf(x, y, z)
 
-        grid_x, grid_y = np.meshgrid(np.arange(self.grid.nx), np.arange(self.grid.ny))
+        grid_x, grid_y = np.meshgrid(np.arange(nx), np.arange(ny))
         grid_z = rbfi(grid_x, grid_y)
 
         return grid_z
 
     @staticmethod
     def normalize(grid, new_min, new_max, mask):
-        """ Normalizes grid to given min max """
+        """ Normalizes grid to given min max
+            (b-a)*(xi-xmin)/(xmax-xmin) + a
+        """
+
         norm_grid = (new_max - new_min) * \
                     (grid - grid[mask].min()) / (grid[mask].max() - \
                     grid[mask].min()) + new_min
 
         return norm_grid
 
+    def reshape_properties(self):
+        """ Adds nlay dimension to arrays """
+        for key in self.properties:
+            try:
+                self.properties[key] = self.properties[key].reshape(
+                    self.grid.nlay,
+                    self.grid.nx,
+                    self.grid.ny
+                )
+            except AttributeError:
+                pass
+
+
 
 class ModelBoundary(object):
-    """ """
+    """ Model boundaries class """
     def __init__(self, grid, model_time, data_source):
         self.grid = grid
         self.model_time = model_time
@@ -253,7 +292,7 @@ class ModelBoundary(object):
             line_converted.append(point_converted)
         # get cells intersected by line segments
         for i in range(len(line_converted) - 1):
-            line_row_col.append(get_line(line_converted[i], line_converted[i+1]))
+            line_row_col.append(get_line_grid(line_converted[i], line_converted[i+1]))
         # delete last cell of each segment
         for i in line_row_col:
             del i[-1]
@@ -273,15 +312,17 @@ class ModelBoundary(object):
         return self.line_segments
 
     def set_boundaries_spd(self):
-        """ Set boundaries's spd data """
+        """ Set boundaries's SPD """
         for key in self.data_source.b_data:
             if key == 'NFL':
                 self.boundaries_spd['NFL'] = self.construct_spd(
+                    b_type='NFL',
                     nper=self.model_time.nper,
                     cells=self.line_segments['NFL']
                 )
             elif key == 'CHD':
                 self.boundaries_spd['CHD'] = self.construct_spd(
+                    b_type='CHD',
                     nper=self.model_time.nper,
                     values_1=self.data_source.b_data['CHD'],
                     values_2=self.data_source.b_data['CHD'],
@@ -289,42 +330,46 @@ class ModelBoundary(object):
                 )
             elif key == 'RIV':
                 self.boundaries_spd['RIV'] = self.construct_spd(
+                    b_type='RIV',
                     nper=self.model_time.nper,
                     values_1=self.data_source.b_data['RIV'],
-                    values_2=self.data_source.b_data['RIV'],
+                    values_2=np.ones(len(self.data_source.b_data['RIV'])),
+                    values_3=np.ones(len(self.data_source.b_data['RIV']))*80,
                     cells=self.line_segments['RIV']
                 )
 
     @staticmethod
-    def construct_spd(nper, cells, values_1=None, values_2=None):
+    def construct_spd(b_type, nper, cells, values_1=None, values_2=None, values_3=None):
         """ Returns SPD dictionary """
         spd = {}
         for step in range(nper):
             step_data = []
             for cell in cells:
-                if values_1 is not None and values_2 is not None:
+                if b_type == 'RIV':
                     step_data.append(
                         [
-                            1,
-                            cell[0],
+                            0,
                             cell[1],
+                            cell[0],
+                            values_1[step],
+                            values_2[step],
+                            values_3[step]
+                        ]
+                    )
+                elif b_type == 'CHD':
+                    step_data.append(
+                        [
+                            0,
+                            cell[1],
+                            cell[0],
                             values_1[step],
                             values_2[step]
                         ]
                     )
-                elif values_1 is not None:
+                elif b_type == 'NFL':
                     step_data.append(
                         [
-                            1,
-                            cell[0],
-                            cell[1],
-                            values_1[step]
-                        ]
-                    )
-                elif values_1 is None and values_2 is None:
-                    step_data.append(
-                        [
-                            1,
+                            0,
                             cell[0],
                             cell[1]
                         ]
@@ -455,7 +500,7 @@ class PropSource(object):
         self.params = params
         self.rand_points = random_points
         self.params_data = {}
-    
+
     def set_params_data(self):
         """ Set random parameters data X, Y, Z """
         for key in self.params:

@@ -14,19 +14,19 @@ class TestModelGenerator(unittest.TestCase):
         self.ymin = 0
         self.ymax = 10
         self.nlay = 1
-        self.nper = 200
-        self.perlen = [100]
-        self.nstp = [100]
-        self.steady = True
-        self.nx = 100
-        self.ny = 100
+        self.nper = 20
+        self.perlen = [1] * self.nper
+        self.nstp = [1] * self.nper
+        self.steady = False
+        self.nx = 50
+        self.ny = 50
         self.n_points = 10
         self.n_dim = 2
         self.b_types = {
             'NFL':{},
-            'CHD': {'min': 100, 'max': 1000,
+            'CHD': {'min': 100, 'max': 120,
                     'periods': [3, 5, 6, 10]},
-            'RIV': {'min': 6, 'max': 10,
+            'RIV': {'min': 80, 'max': 90,
                     'periods': [3, 4, 6]}
             }
         self.layer_props_params = {
@@ -71,16 +71,19 @@ class TestModelGenerator(unittest.TestCase):
         self.properties_source.set_params_data()
         self.model_boundary.set_boundaries_spd()
         self.model_layer.set_properties()
+        self.model_layer.reshape_properties()
 
         self.model_name = 'model_1'
         self.workspace = 'models\\' + self.model_name
         self.version = 'mfnwt'
-        self.verbose = True
+        self.exe_name = 'MODFLOW-NWT_64.exe'
+        self.verbose = False
 
         self.model = Model(
             model_name=self.model_name,
             workspace=self.workspace,
             version=self.version,
+            exe_name=self.exe_name,
             verbose=self.verbose,
             model_solver=self.model_solver,
             model_time=self.model_time,
@@ -99,128 +102,122 @@ class TestModelGenerator(unittest.TestCase):
 
 
 
-    def tearDown(self):
-
-        self.vector_source = None
-        self.data_source = None
-        self.active_grid = None
-        self.model_boundary = None
-
-    def test_random_points(self):
-        """
-        Testing random points and convex hull generation
-        """
-        self.assertEqual(
-            self.n_points,
-            len(self.vector_source.convex_hull.points)
-        )
-
-    def test_random_data(self):
-        """ Test data source generation"""
-        self.assertEqual(len(self.data_source.b_data), len(self.b_types))
-        for key in self.b_types:
-            if key != 'NFL':
-                self.assertEqual(
-                    len(self.data_source.b_data[key]), self.nper
-                    )
-        # plt.plot(model_data['RIV'])
-        # plt.show()
-        # plt.plot(model_data['CHD'])
-        # plt.show()
 
 
-    def test_boundary_ibound(self):
-        """ Vaidate ibound and boundary grid """
-        # If ibound cell is 0, boundary cell has to be 0.
-        # If bondary cell is 1, ibound cell has to be 1.
-        for i in range(self.ny):
-            for j in range(self.nx):
-                if self.active_grid.ibound[i][j] == 0:
-                    self.assertEqual(self.active_grid.bound_ibound[i][j], 0)
-                if self.active_grid.bound_ibound[i][j] == 1:
-                    self.assertEqual(self.active_grid.ibound[i][j], 1)
+    # def tearDown(self):
 
-        # plt.imshow(self.active_grid.bound_ibound, interpolation="nearest")
-        # plt.show()
+    #     self.vector_source = None
+    #     self.data_source = None
+    #     self.active_grid = None
+    #     self.model_boundary = None
 
-    def test_boundary_segments(self):
-        """ Validate model boundaries' segments """
-        total_cells = 0
-        for key in self.model_boundary.line_segments:
-            total_cells += len(self.model_boundary.line_segments[key])
+    # def test_random_points(self):
+    #     """
+    #     Testing random points and convex hull generation
+    #     """
+    #     self.assertEqual(
+    #         self.n_points,
+    #         len(self.vector_source.convex_hull.points)
+    #     )
 
-        self.assertEqual(
-            total_cells,
-            np.count_nonzero(self.active_grid.bound_ibound)
-            )
+    # def test_random_data(self):
+    #     """ Test data source generation"""
+    #     self.assertEqual(len(self.data_source.b_data), len(self.b_types))
+    #     for key in self.b_types:
+    #         if key != 'NFL':
+    #             self.assertEqual(
+    #                 len(self.data_source.b_data[key]), self.nper
+    #                 )
+    #     # plt.plot(model_data['RIV'])
+    #     # plt.show()
+    #     # plt.plot(model_data['CHD'])
+    #     # plt.show()
 
-    def test_boundary_spd(self):
-        """ Validate boundaries's SPD """
-        self.assertEqual(
-            len(self.model_boundary.boundaries_spd),
-            len(self.b_types)
-        )
-        for key in self.model_boundary.boundaries_spd:
-            self.assertTrue(
-                key in self.b_types
-            )
-            self.assertEqual(
-                len(self.model_boundary.boundaries_spd[key]),
-                self.nper
-            )
 
-    def test_property_source(self):
-        """ Validate creation of random properties """
-        self.assertEqual(
-            len(self.properties_source.params_data),
-            len(self.layer_props_params)
-        )
-        for key in self.properties_source.params_data:
-            self.assertTrue(
-                len(self.properties_source.params_data[key]['z']) == \
-                len(self.properties_source.params_data[key]['x']) == \
-                len(self.properties_source.params_data[key]['y']) == \
-                len(self.vector_source.random_points)
-            )
-            for z in self.properties_source.params_data[key]['z']:
-                self.assertTrue(
-                    z <= self.layer_props_params[key]['max']
-                )
-                self.assertTrue(
-                    z >= self.layer_props_params[key]['min']
-                )
+    # def test_boundary_ibound(self):
+    #     """ Vaidate ibound and boundary grid """
+    #     # If ibound cell is 0, boundary cell has to be 0.
+    #     # If bondary cell is 1, ibound cell has to be 1.
+    #     for i in range(self.ny):
+    #         for j in range(self.nx):
+    #             if self.active_grid.ibound[i][j] == 0:
+    #                 self.assertEqual(self.active_grid.bound_ibound[i][j], 0)
+    #             if self.active_grid.bound_ibound[i][j] == 1:
+    #                 self.assertEqual(self.active_grid.ibound[i][j], 1)
 
-    def test_prop_rasters(self):
-        """ Validate generated property rasters """
-        plt.imshow(
-            self.active_grid.ibound, interpolation='nearest'
-            )
-        plt.colorbar()
-        plt.show()
-        plt.imshow(
-            self.model_layer.properties['hk'], interpolation='nearest'
-            )
-        plt.colorbar()
-        plt.show()
-        plt.imshow(
-            self.model_layer.properties['botm'], interpolation='nearest'
-            )
-        plt.colorbar()
-        plt.show()
+    #     # plt.imshow(self.active_grid.bound_ibound, interpolation="nearest")
+    #     # plt.show()
 
-        # plt.imshow(
-        #     self.active_grid.bound_ibound, interpolation='nearest'
-        #     )
-        # plt.colorbar()
-        # plt.show()
-        
-        # plt.colorbar()
-        # plt.show()
-        # plt.imshow(
-        #     self.model_layer.properties['top'], interpolation='nearest'
-        #     )
-        # plt.colorbar()
-        # plt.show()
+    # def test_boundary_segments(self):
+    #     """ Validate model boundaries' segments """
+    #     total_cells = 0
+    #     for key in self.model_boundary.line_segments:
+    #         total_cells += len(self.model_boundary.line_segments[key])
+
+    #     self.assertEqual(
+    #         total_cells,
+    #         np.count_nonzero(self.active_grid.bound_ibound)
+    #         )
+
+    # def test_boundary_spd(self):
+    #     """ Validate boundaries's SPD """
+    #     self.assertEqual(
+    #         len(self.model_boundary.boundaries_spd),
+    #         len(self.b_types)
+    #     )
+    #     for key in self.model_boundary.boundaries_spd:
+    #         self.assertTrue(
+    #             key in self.b_types
+    #         )
+    #         self.assertEqual(
+    #             len(self.model_boundary.boundaries_spd[key]),
+    #             self.nper
+    #         )
+
+    # def test_property_source(self):
+    #     """ Validate creation of random properties """
+    #     self.assertEqual(
+    #         len(self.properties_source.params_data),
+    #         len(self.layer_props_params)
+    #     )
+    #     for key in self.properties_source.params_data:
+    #         self.assertTrue(
+    #             len(self.properties_source.params_data[key]['z']) == \
+    #             len(self.properties_source.params_data[key]['x']) == \
+    #             len(self.properties_source.params_data[key]['y']) == \
+    #             len(self.vector_source.random_points)
+    #         )
+    #         for z in self.properties_source.params_data[key]['z']:
+    #             self.assertTrue(
+    #                 z <= self.layer_props_params[key]['max']
+    #             )
+    #             self.assertTrue(
+    #                 z >= self.layer_props_params[key]['min']
+    #             )
+
+    # def test_prop_rasters(self):
+    #     """ Validate generated property rasters """
+    #     plt.imshow(
+    #         self.active_grid.ibound, interpolation='nearest'
+    #         )
+    #     plt.colorbar()
+    #     plt.show()
+    #     plt.imshow(
+    #         self.model_layer.properties['hk'], interpolation='nearest'
+    #         )
+    #     plt.colorbar()
+    #     plt.show()
+    #     plt.imshow(
+    #         self.model_layer.properties['botm'], interpolation='nearest'
+    #         )
+    #     plt.colorbar()
+    #     plt.show()
+
+    def test_model(self):
+#        self.chd.plot()
+        self.mf.write_input()
+        #  self.mf.plot()
+        success, buff = self.mf.run_model()
 
 
 

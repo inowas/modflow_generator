@@ -3,12 +3,11 @@ from matplotlib.path import Path
 
 def xy_to_colrow(x, y, start_x, start_y, dx, dy):
     """ Transform x, y coordinates to column/row """
-    # print(x,start_x, dx)
     col = int((x - start_x)/dx)
     row = int((y - start_y)/dy)
     return col, row
 
-def get_polygon(vertices, nx, ny):
+def get_polygon_grid(vertices, nx, ny):
     """ Matplotilbs Path, to define inner cells
     nx, ny = 15, 15
     vertices = [(1,1), (10,1), (10,9),(3,2),(1,1)]
@@ -22,11 +21,11 @@ def get_polygon(vertices, nx, ny):
     grid = grid.reshape((ny,nx))
     return grid.astype(int)
 
-def get_line(start, end):
+def get_line_grid(start, end):
     """Bresenham's Line Algorithm
     Produces a list of tuples from start and end
-    points1 = get_line((0, 0), (3, 4))
-    points2 = get_line((3, 4), (0, 0))
+    points1 = get_line_grid((0, 0), (3, 4))
+    points2 = get_line_grid((3, 4), (0, 0))
     print points1
     [(0, 0), (1, 1), (1, 2), (2, 3), (3, 4)]
     print points2
