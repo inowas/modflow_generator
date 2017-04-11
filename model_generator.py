@@ -5,6 +5,7 @@ import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.interpolate import Rbf
 from random import randint
+from copy import deepcopy
 import flopy
 from utils import xy_to_colrow, get_polygon_grid, get_line_grid
 
@@ -41,6 +42,16 @@ class Model(object):
             maxiterout=self.model_solver.maxiterout
         )
         return nwt
+
+    def get_pcg(self, mf):
+        pcg = flopy.modflow.ModflowPcg(
+            mf,
+            mxiter=self.model_solver.mxiter,
+            iter1=self.model_solver.iter1,
+            hclose=self.model_solver.hclose,
+            rclose=self.model_solver.rclose,
+        )
+        return pcg
 
     def get_dis(self, mf):
         dis = flopy.modflow.ModflowDis(
@@ -82,7 +93,6 @@ class Model(object):
 
     def get_chd(self, mf):
         if len(self.model_boundary.boundaries_spd['CHD'][0]) == 0:
-            
             return None
 
         chf = flopy.modflow.ModflowChd(
@@ -94,8 +104,8 @@ class Model(object):
 
     def get_riv(self, mf):
         if len(self.model_boundary.boundaries_spd['RIV'][0]) == 0:
-            
             return None
+        # print(self.model_boundary.boundaries_spd['RIV'])
         riv = flopy.modflow.ModflowRiv(
             mf,
             stress_period_data=self.model_boundary.boundaries_spd['RIV']
@@ -103,12 +113,26 @@ class Model(object):
         # print(self.model_boundary.boundaries_spd['RIV'][0])
         return riv
 
+    def get_wel(self, mf):
+        if len(self.model_boundary.boundaries_spd['WEL'][0]) == 0:
+            return None
+        # print(self.model_boundary.boundaries_spd['WEL'])
+        wel = flopy.modflow.ModflowWel(
+            mf,
+            stress_period_data=self.model_boundary.boundaries_spd['WEL']
+        )
+        return wel
+
 
 class Solver(object):
     """ Modflow NWT input """
-    def __init__(self, headtol, maxiterout):
+    def __init__(self, headtol, maxiterout, mxiter, iter1, hclose, rclose):
         self.headtol = headtol
         self.maxiterout = maxiterout
+        self.mxiter = mxiter
+        self.iter1 = iter1
+        self.hclose = hclose
+        self.rclose = rclose
 
 class Grid(object):
     """ Model grid  """
@@ -257,13 +281,15 @@ class ModelLayer(object):
 
 
 
+
+
 class ModelBoundary(object):
     """ Model boundaries class """
     def __init__(self, grid, model_time, data_source):
         self.grid = grid
         self.model_time = model_time
         self.data_source = data_source
-
+        self.well_cells = []
         self.line_segments = {
             'NFL': [],
             'CHD': [],
@@ -272,8 +298,26 @@ class ModelBoundary(object):
         self.boundaries_spd = {
             'NFL': None,
             'CHD': None,
-            'RIV': None
+            'RIV': None,
+            'WEL': None
         }
+
+    def set_well(self, inner_points):
+        """ Sets x, y of a randomly selected point """
+        if len(inner_points) == 0:
+            return
+        well = inner_points[
+            randint(0, len(inner_points) - 1)
+        ]
+        well = xy_to_colrow(
+            well[0],
+            well[1],
+            self.grid.xmin,
+            self.grid.ymin,
+            self.grid.dx,
+            self.grid.dy
+        )
+        self.well_cells.append(well)
 
     def set_line_segments(self, line):
         """ Returns line segments in col/rows """
@@ -299,10 +343,10 @@ class ModelBoundary(object):
         # generate number of segments for each boundary
         nums_of_segments = self.rand_seg_nums(
             len(line_row_col),
-            len(self.data_source.b_data)
+            len(self.data_source.linear_boundaries)
             )
         # assign cells to each boundary type
-        for idx, key in enumerate(self.data_source.b_data):
+        for idx, key in enumerate(self.data_source.linear_boundaries):
             for i in range(nums_of_segments[idx]):
                 self.line_segments[key].extend(
                     line_row_col[i]
@@ -336,6 +380,13 @@ class ModelBoundary(object):
                     values_2=np.ones(len(self.data_source.b_data['RIV'])),
                     values_3=np.ones(len(self.data_source.b_data['RIV']))*80,
                     cells=self.line_segments['RIV']
+                )
+            elif key == 'WEL' and len(self.well_cells) > 0:
+                self.boundaries_spd['WEL'] = self.construct_spd(
+                    b_type='WEL',
+                    nper=self.model_time.nper,
+                    values_1=self.data_source.b_data['WEL'],
+                    cells=self.well_cells
                 )
 
     @staticmethod
@@ -372,6 +423,15 @@ class ModelBoundary(object):
                             0,
                             cell[0],
                             cell[1]
+                        ]
+                    )
+                elif b_type == 'WEL':
+                    step_data.append(
+                        [
+                            0,
+                            cell[0],
+                            cell[1],
+                            values_1[step]
                         ]
                     )
             spd[step] = step_data
@@ -411,6 +471,8 @@ class VectorSource(object):
             )
         self.convex_hull = self.give_convex_hull(self.random_points)
         self.polygon = self.give_polygon(self.convex_hull.vertices, self.random_points)
+        self.inner_points = self.give_inner_points(self.convex_hull.vertices,
+                                                   self.random_points)
 
     @staticmethod
     def give_rand_points(n_points, xmin, xmax, ymin, ymax, n_dim=2):
@@ -438,6 +500,13 @@ class VectorSource(object):
             polygon.append(polygon[0])
         return polygon
 
+    @staticmethod
+    def give_inner_points(vertices, points):
+        inner_points = points.tolist()
+        for vertex in np.sort(vertices)[::-1]:
+            del inner_points[vertex]
+        return inner_points
+
 
 class DataSource(object):
     """ Time series data for the model """
@@ -445,6 +514,9 @@ class DataSource(object):
         self.nper = nper
         self.b_types = b_types
         self.b_data = {}
+        self.linear_boundaries = [
+            key for key in b_types if key != 'WEL'
+            ]
 
     def generate_data(self):
         """ Generates data series for given b_types """

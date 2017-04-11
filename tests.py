@@ -9,12 +9,13 @@ class TestModelGenerator(unittest.TestCase):
     """ """
 
     def setUp(self):
+        # Model paramenters
         self.xmin = 0
         self.xmax = 10
         self.ymin = 0
         self.ymax = 10
         self.nlay = 1
-        self.nper = 20
+        self.nper = 100
         self.perlen = [1] * self.nper
         self.nstp = [1] * self.nper
         self.steady = False
@@ -27,7 +28,9 @@ class TestModelGenerator(unittest.TestCase):
             'CHD': {'min': 100, 'max': 120,
                     'periods': [3, 5, 6, 10]},
             'RIV': {'min': 80, 'max': 90,
-                    'periods': [3, 4, 6]}
+                    'periods': [3, 4, 6]},
+            'WEL': {'min': 1000, 'max': 5000,
+                    'periods': [6, 10]},
             }
         self.layer_props_params = {
             'hk': {'min': 0.1, 'max': 10.},
@@ -38,47 +41,64 @@ class TestModelGenerator(unittest.TestCase):
         }
         self.headtol = 0.01
         self.maxiterout = 100
+        self.mxiter = 100
+        self.iter1 = 100
+        self.hclose = 0.1
+        self.rclose = 0.1
+        self.model_name = 'model_1'
+        self.workspace = 'models\\' + self.model_name
+        self.version = 'mfnwt'
+        self.exe_name = 'MODFLOW-NWT.exe'
+        self.verbose = False
 
+        # Vector input data source
         self.vector_source = VectorSource(
             self.xmin, self.ymin, self.xmax, self.ymax, self.n_points, self.n_dim
             )
+        # Time-series input data source
         self.data_source = DataSource(
             self.nper,
             self.b_types
         )
+        self.data_source.generate_data()
+        # Layer properties data source
         self.properties_source = PropSource(
             self.layer_props_params, self.vector_source.random_points
         )
+        self.properties_source.set_params_data()
+        # Model grid
         self.active_grid = ActiveGrid(
             self.xmin, self.ymin, self.xmax, self.ymax, self.nx, self.ny, self.nlay
             )
+        self.active_grid.set_ibound(self.vector_source.polygon)
+        # Model time
         self.model_time = ModelTime(
             self.nper, self.perlen, self.nstp, self.steady
             )
+        # Model boundary
         self.model_boundary = ModelBoundary(
             self.active_grid, self.model_time, self.data_source
             )
+        self.model_boundary.set_line_segments(self.vector_source.polygon)
+        self.model_boundary.set_well(self.vector_source.inner_points)
+        self.model_boundary.set_boundaries_spd()
+
+        # Model layer
         self.model_layer = ModelLayer(
             self.properties_source, self.active_grid
         )
-        self.model_solver = Solver(self.headtol, self.maxiterout)
-
-        self.active_grid.set_ibound(self.vector_source.polygon)
-        self.data_source.generate_data()
-        self.model_boundary.set_line_segments(
-            self.vector_source.polygon
-            )
-        self.properties_source.set_params_data()
-        self.model_boundary.set_boundaries_spd()
         self.model_layer.set_properties()
         self.model_layer.reshape_properties()
-
-        self.model_name = 'model_1'
-        self.workspace = 'models\\' + self.model_name
-        self.version = 'mfnwt'
-        self.exe_name = 'MODFLOW-NWT_64.exe'
-        self.verbose = False
-
+        # Model solver
+        self.model_solver = Solver(
+            self.headtol,
+            self.maxiterout,
+            self.mxiter,
+            self.iter1,
+            self.hclose,
+            self.rclose
+            )
+        # Flopy model
         self.model = Model(
             model_name=self.model_name,
             workspace=self.workspace,
@@ -91,25 +111,33 @@ class TestModelGenerator(unittest.TestCase):
             model_boundary=self.model_boundary,
             model_layer=self.model_layer,
         )
-
+        # Flopy packages
         self.mf = self.model.get_mf()
-        self.nwt = self.model.get_nwt(self.mf)
+        self.pcg = self.model.get_pcg(self.mf)
+#        self.nwt = self.model.get_nwt(self.mf)
         self.dis = self.model.get_dis(self.mf)
         self.bas = self.model.get_bas(self.mf)
         self.lpf = self.model.get_lpf(self.mf)
         self.chd = self.model.get_chd(self.mf)
         self.riv = self.model.get_riv(self.mf)
+        self.wel = self.model.get_wel(self.mf)
 
+    def tearDown(self):
 
-
-
-
-    # def tearDown(self):
-
-    #     self.vector_source = None
-    #     self.data_source = None
-    #     self.active_grid = None
-    #     self.model_boundary = None
+        self.vector_source = None
+        self.data_source = None
+        self.active_grid = None
+        self.model_boundary = None
+        self.model = None
+        self.mf = None
+        self.pcg = None
+#        self.nwt = None
+        self.dis = None
+        self.bas = None
+        self.lpf = None
+        self.chd = None
+        self.riv = None
+        self.wel = None
 
     # def test_random_points(self):
     #     """
@@ -174,6 +202,7 @@ class TestModelGenerator(unittest.TestCase):
     #             self.nper
     #         )
 
+
     # def test_property_source(self):
     #     """ Validate creation of random properties """
     #     self.assertEqual(
@@ -214,12 +243,11 @@ class TestModelGenerator(unittest.TestCase):
     #     plt.show()
 
     def test_model(self):
-#        self.chd.plot()
         self.mf.write_input()
-        #  self.mf.plot()
+        # self.mf.plot()
         success, buff = self.mf.run_model()
 
 
 
 if __name__ == '__main__':
-    unittest.main()
+   unittest.main()
