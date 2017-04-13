@@ -1,3 +1,4 @@
+import flopy
 
 def drop_iface(rec):
     """
@@ -11,7 +12,7 @@ def drop_iface(rec):
     return list_
 
 
-def prepare_packages_transient(model_object, stress_periods):
+def prepare_packages(model_object, stress_periods):
     """
     Rewrites models spd packages to start/end transient stress_periods
     """
@@ -24,14 +25,14 @@ def prepare_packages_transient(model_object, stress_periods):
 
     print('Reading stress-period-data of the given model object...')
     print(' '.join(
-                [
-                    'Writing new packages for stress periods ',
-                    str(stress_periods[0]),
-                    ':',
-                    str(stress_periods[-1])
-                ]
-            )
+        [
+            'Writing new packages for stress periods ',
+            str(stress_periods[0]),
+            ':',
+            str(stress_periods[-1])
+        ]
         )
+         )
 
     for package_name in model_object.get_package_list():
         if package_name in modflow_spd_packages:
@@ -56,7 +57,7 @@ def prepare_packages_transient(model_object, stress_periods):
             perlen = dis.perlen.array[stress_periods[0]:stress_periods[-1] + 1]
             nstp = dis.nstp.array[stress_periods[0]:stress_periods[-1] + 1]
             steady = dis.steady.array[stress_periods[0]:stress_periods[-1] + 1]
-            nper = dis.nper
+            nper = len(perlen)
             delc = dis.delc.array
             delr = dis.delr.array
             nlay = dis.nlay

@@ -21,23 +21,29 @@ def main():
                     'col_max': 100,
                     'rate_min': 1000,
                     'rate_max': 2000
-                },
+                    },
                 'location': {
                     'lay': 0,
                     'row': 0,
                     'col': 0
-                },
+                    },
                 'pumping': {
                     'rates': {
-                        0: 100,
-                        1: 100,
-                        2: 100
-                    },
-                    'total_volume': 300
-                }
-            },
+                        0: 1000,
+                        1: 1000,
+                        2: 1000,
+                        3: 1000,
+                        4: 1000,
+                        5: 1000,
+                        6: 1000,
+                        7: 1000,
+                        8: 1000,
+                        9: 1000
+                        }
+                    }
+                },
             {
-                'bbox': {
+                'constrains': {
                     'layer_min': 0,
                     'layer_max': 0,
                     'row_min': 0,
@@ -46,25 +52,29 @@ def main():
                     'col_max': 100,
                     'rate_min': -1000,
                     'rate_max': -500
-                },
+                    },
                 'location': {
-                    'lay': 0,
-                    'row': 1,
-                    'col': 1
-                },
+                    'lay': 0
+                    },
                 'pumping': {
                     'rates': {
-                        0: -100,
-                        1: -100,
-                        2: -100
-                    },
-                    'total_volume': -300
+                        0: -1000,
+                        1: -1000,
+                        2: -1000,
+                        3: -1000,
+                        4: -1000,
+                        5: -1000,
+                        6: -1000,
+                        7: -1000,
+                        8: -1000,
+                        9: -1000
+                        }
+                    }
                 }
-            }
         ],
         'time': {
-            'stress_periods': [0, 1, 2],
-            'steady': [True, False, False]
+            'stress_periods': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            'steady': [False, False, False, False, False, False, False, False, False, False]
         }
     }
 

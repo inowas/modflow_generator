@@ -74,7 +74,8 @@ class Model(object):
         bas = flopy.modflow.ModflowBas(
             mf,
             ibound=self.model_grid.ibound_reshaped,
-            strt=self.model_layer.properties['strt']
+            strt=self.model_layer.properties['strt'],
+            hnoflo=-9999
         )
         return bas
 
@@ -122,6 +123,12 @@ class Model(object):
             stress_period_data=self.model_boundary.boundaries_spd['WEL']
         )
         return wel
+
+    def get_oc(self, mf):
+        oc = flopy.modflow.ModflowOc(
+            mf,
+        )
+        return oc
 
 
 class Solver(object):

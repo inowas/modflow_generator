@@ -6,7 +6,7 @@ from deap import creator
 from deap import tools
 from deap import algorithms
 import flopy
-from utils_model_optimization import prepare_packages_steady, drop_iface
+from utils_model_optimization import prepare_packages, drop_iface
 
 
 """
@@ -24,28 +24,36 @@ class ModflowOptimization(object):
     """
     def __init__(self, data):
         self.request_data = data
-        self.model = flopy.modflow.Modflow.load(f=data['model_name'],
-                                                model_ws=data['workspace'])
+        self.model_original = flopy.modflow.Modflow.load(
+            f=data['model_name'],
+            model_ws=data['workspace']
+            )
+        self.model_updated
         self.stress_periods = data['time']['stress_periods']
         self.steady = data['time']['steady']
         self.ngen = data['ngen']
         self.popsize = data['popsize']
         self.control_layer = data['control_layer']
         self.wells_bbox = data['wells_bbox']
-        self.ghost_wells = [GhostWell(well_data) for well_data in data['wells']]
+        self.ghost_wells = [
+            GhostWell(idx, well_data) for idx, well_data in enumerate(data['wells'])
+            ]
 
-        self.variables_map = []
+        self.variables_map = {}
         self.reference_head_mean = None
 
     def initialize(self):
-        """ Model initialization """
-        self.model = prepare_packages_steady(
-            self.model,
+        """ Model update. Set reference head value """
+        # Set model object with new stress periods
+        self.model_updated = prepare_packages(
+            self.model_original,
             self.stress_periods
             )
-        self.model.write_input()
-        head_file_name = os.path.join(self.model.model_ws, self.model.name)
+        self.model_updated.write_input()
+        # Set reference head value
+        head_file_name = os.path.join(self.model_updated.model_ws, self.model_updated.name)
         head_file_object = flopy.utils.HeadFile(head_file_name + '.hds')
+
         reference_head = head_file_object.get_alldata(
             mflay=self.control_layer,
             nodata=-9999
@@ -57,26 +65,22 @@ class ModflowOptimization(object):
         """Generate initial candidate and
            map candidates variables into variables_map list """
         candidate = []
-        for idx, well in enumerate(self.ghost_wells):
+        for well in self.ghost_wells:
+            self.variables_map[well.idx] = {}
             if 'lay' in well.well_variables:
-                candidate.append(random.randint(well.bbox['layer_min'],
-                                                well.bbox['layer_max']))
-                self.variables_map.append(('lay', idx))
-            if 'row' in well.well_variables:
-                candidate.append(random.randint(well.bbox['row_min'],
-                                                well.bbox['row_max']))
-                self.variables_map.append(('row', idx))
-            if 'col' in well.well_variables:
-                candidate.append(random.randint(well.bbox['col_min'],
-                                                well.bbox['col_max']))
-                self.variables_map.append(('col', idx))
-            if 'rates' in well.well_variables:
-                for i in range(len(self.stress_periods)):
-                    candidate.append(random.random(well.bbox['rate_min'],
-                                                   well.bbox['rate_max']))
-                    self.variables_map.append(('rate', idx))
+                candidate.append(random.randint(well.constrains['layer_min'],
+                                                well.constrains['layer_max']))
+                self.variables_map[well.idx]['lay'] = len(candidate)
+            elif 'row' in well.well_variables:
+                candidate.append(random.randint(well.constrains['row_min'],
+                                                well.constrains['row_max']))
+                self.variables_map[well.idx]['row'] = len(candidate)
+            elif 'col' in well.well_variables:
+                candidate.append(random.randint(well.constrains['col_min'],
+                                                well.constrains['col_max']))
+                self.variables_map[well.idx]['col'] = len(candidate)
 
-        print(' '.join(['FIRST CANDIDATE WELL:', str(candidate)]))
+        print(' '.join(['INITIAL CANDIDATE WELL:', str(candidate)]))
         return candidate
 
     def mutate(self, individual):
@@ -85,23 +89,18 @@ class ModflowOptimization(object):
         for i, variable_idx in enumerate(self.variables_map):
             if variable_idx[0] == 'lay':
                 individual[i] = random.randint(
-                    self.ghost_wells[variable_idx[1]].bbox['layer_min'],
-                    self.ghost_wells[variable_idx[1]].bbox['layer_min']
+                    self.ghost_wells[variable_idx[1]].constrains['layer_min'],
+                    self.ghost_wells[variable_idx[1]].constrains['layer_min']
                     )
             elif variable_idx[0] == 'row':
                 individual[i] = random.randint(
-                    self.ghost_wells[variable_idx[1]].bbox['row_min'],
-                    self.ghost_wells[variable_idx[1]].bbox['row_min']
+                    self.ghost_wells[variable_idx[1]].constrains['row_min'],
+                    self.ghost_wells[variable_idx[1]].constrains['row_min']
                     )
             elif variable_idx[0] == 'col':
                 individual[i] = random.randint(
-                    self.ghost_wells[variable_idx[1]].bbox['col_min'],
-                    self.ghost_wells[variable_idx[1]].bbox['col_min']
-                    )
-            elif variable_idx[0] == 'rate':
-                individual[i] = random.random(
-                    self.ghost_wells[variable_idx[1]].bbox['rate_min'],
-                    self.ghost_wells[variable_idx[1]].bbox['rate_min']
+                    self.ghost_wells[variable_idx[1]].constrains['col_min'],
+                    self.ghost_wells[variable_idx[1]].constrains['col_min']
                     )
 
         return individual,
@@ -109,20 +108,40 @@ class ModflowOptimization(object):
     def evaluate(self, individual):
         """ Add well, ran model and evaluate results """
         # Update WEL package
-        if 'WEL' in self.model.get_package_list():
-            wel_package = self.model.get_package('WEL')
-            spd_old = wel_package.stress_period_data.data
+        if 'WEL' in self.model_updated.get_package_list():
+            wel_package = self.model_updated.get_package('WEL')
+            spd = wel_package.stress_period_data.data
 
-            for idx, well in enumerate(self.ghost_wells):
-                spd = well.append_to_spd(spd=spd_old, idx=idx)
+            for well in self.ghost_wells:
+                spd = well.append_to_spd(
+                    spd_old=spd,
+                    individual=individual,
+                    variables_map=self.variables_map
+                    )
 
-            wel_new = flopy.modflow.ModflowWel(self.model,
-                                               stress_period_data=spd)
+            wel_new = flopy.modflow.ModflowWel(
+                self.model_updated,
+                stress_period_data=spd
+                )
             wel_new.write_file()
+        # Or write new package
         else:
-            wel_new = flopy.modflow.ModflowWel(self.model,
-                                               stress_period_data={0: [individual]})
+            spd = {
+                key: None for key in self.request_data['time']['stress_periods']
+                }
+            for well in self.ghost_wells:
+                spd = well.append_to_spd(
+                    spd_old=spd,
+                    individual=individual,
+                    variables_map=self.variables_map
+                    )
+
+            wel_new = flopy.modflow.ModflowWel(
+                self.model_updated,
+                stress_period_data=spd
+                )
             wel_new.write_file()
+
         # Run model
         silent = True
         pause = False
@@ -191,14 +210,16 @@ class ModflowOptimization(object):
             )
         return self.hall_of_fame
 
+
 class GhostWell(object):
     """Well used in optimization process"""
-    def __init__(self, data):
+    def __init__(self,i dx, data):
+        self.idx = idx
         self.data = data
         # Area bounding box
-        self.bbox = data['bbox']
+        self.constrains = data['constrains']
         self.row_in_spd = None
-        self.once_appended = self.row_in_spd is not None
+        self.once_appended = False
 
         # Variables to be optimized
         self.wel_variables = []
@@ -208,25 +229,47 @@ class GhostWell(object):
             self.wel_variables.append('row')
         if 'col' not in data['location'] or data['location']['col'] is None:
             self.wel_variables.append('col')
-        if 'rates' not in data['pumping'] or data['pumping']['rates'] is None:
-            self.wel_variables.append('rates')
-        if 'total_volume' not in data['pumping'] or data['pumping']['total_volume'] is None:
-            self.wel_variables.append('toltal_volume')
 
-    def append_to_spd(self, well_data, spd):
+    def append_to_spd(self, spd_old, individual, variables_map):
         """Add candidate well data to SPD """
+        # Define lay, row, col
+        if 'lay' in variable_map[self.idx]:
+            lay = individual[variable_map[self.idx]['lay']]
+        else:
+            lay = self.data['location']['lay']
+        if 'row' in variable_map[self.idx]:
+            lay = individual[variable_map[self.idx]['row']]
+        else:
+            lay = self.data['location']['row']
+        if 'col' in variable_map[self.idx]:
+            lay = individual[variable_map[self.idx]['col']]
+        else:
+            lay = self.data['location']['col']
+
         # Replace previousely appended ghost well with a new one
         if self.once_appended:
-            for period in well_data:
-                np.put(spd[period], self.row_in_spd, (well_data[period]))
+            for period in data['pumping']['rates']:
+                np.put(
+                    spd[period],
+                    self.row_in_spd,
+                    ([
+                        lay, row, col, self.data['pumping']['rates'][period]
+                    ])
+                    )
 
         else:
             # Initially append a ghost well
-            for period in well_data:
+            if spd[period] is None:
+                spd[period] = np.recarray()
+            for period in data['pumping']['rates']:
                 spd[period] = np.append(
                     spd[period],
-                    np.array([well_data[period]], dtype=spd.dtype)
+                    np.array([
+                        lay, row, col, self.data['pumping']['rates'][period]
+                        ],
+                        dtype=spd.dtype)
                     ).view(np.recarray)
-                self.row_in_spd = spd[period].shape()[0]
 
+                self.row_in_spd = spd[period].shape()[0]
+                self.once_appended = True
         return spd

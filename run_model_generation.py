@@ -83,13 +83,19 @@ class ModflowModel(object):
         self.chd = self.model.get_chd(self.mf)
         self.riv = self.model.get_riv(self.mf)
         self.wel = self.model.get_wel(self.mf)
+        self.oc = self.model.get_oc(self.mf)
 
     def write_files(self):
         self.mf.write_input()
 
     def run_model(self):
-        self.mf.run_model()
-
+        success, output = self.mf.run_model(
+            silent=True,
+            pause=False,
+            report=True
+            )
+        for i in output:
+            print(i)
 def main():
     """ """
     model_data = {
@@ -98,9 +104,9 @@ def main():
         'ymin': 0,
         'ymax': 10,
         'nlay': 1,
-        'nper': 100,
-        'perlen': [1] * 100,
-        'nstp': [1] * 100,
+        'nper': 10,
+        'perlen': [1] * 10,
+        'nstp': [1] * 10,
         'steady': False,
         'nx': 50,
         'ny': 50,
@@ -109,11 +115,11 @@ def main():
         'b_types': {
             'NFL':{},
             'CHD': {'min': 100, 'max': 120,
-                    'periods': [3, 5, 6, 10]},
+                    'periods': [2, 5, 6]},
             'RIV': {'min': 80, 'max': 90,
                     'periods': [3, 4, 6]},
             'WEL': {'min': 1000, 'max': 5000,
-                    'periods': [6, 10]},
+                    'periods': [2, 5]},
             },
         'layer_props_params': {
             'hk': {'min': 0.1, 'max': 10.},
@@ -132,7 +138,7 @@ def main():
         'workspace': 'models\\' + 'model_1',
         'version': 'mf2005',
         'exe_name': 'mf2005',
-        'verbose': False,
+        'verbose': True
     }
 
     try:

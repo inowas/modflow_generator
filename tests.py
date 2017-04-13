@@ -2,7 +2,9 @@ import unittest
 import numpy as np
 import flopy
 import matplotlib.pyplot as plt
-from model_generator import Solver, Model, ActiveGrid, ModelTime, DataSource, ModelBoundary, VectorSource, ModelLayer, PropSource
+from model_generator import Solver, Model, ActiveGrid, \
+                            ModelTime, DataSource, ModelBoundary, \
+                            VectorSource, ModelLayer, PropSource
 
 
 class TestModelGenerator(unittest.TestCase):
