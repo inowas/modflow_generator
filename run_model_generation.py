@@ -1,7 +1,7 @@
 import shutil
-from model_generator import Solver, Model, ActiveGrid, \
-                            ModelTime, DataSource, ModelBoundary, \
-                            VectorSource, ModelLayer, PropSource
+from model_generation import Solver, Model, ActiveGrid, \
+                             ModelTime, DataSource, ModelBoundary, \
+                             VectorSource, ModelLayer, PropSource
 
 
 class ModflowModel(object):
@@ -138,6 +138,7 @@ def main():
     try:
         shutil.rmtree(model_data['workspace'])
         print('Updating model in ', model_data['workspace'])
+        print('Old model data deleted')
     except FileNotFoundError:
         print('Writing new model to ', model_data['workspace'])
 
@@ -148,4 +149,4 @@ def main():
 
 
 if __name__ == '__main__':
-   main()
+    main()

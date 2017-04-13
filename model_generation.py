@@ -7,7 +7,7 @@ from scipy.interpolate import Rbf
 from random import randint
 from copy import deepcopy
 import flopy
-from utils import xy_to_colrow, get_polygon_grid, get_line_grid
+from utils_model_generation import xy_to_colrow, get_polygon_grid, get_line_grid
 
 
 class Model(object):
@@ -34,7 +34,7 @@ class Model(object):
             verbose=self.verbose
         )
         return mf
-    
+
     def get_nwt(self, mf):
         nwt = flopy.modflow.ModflowNwt(
             mf,
