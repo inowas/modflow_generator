@@ -19,7 +19,7 @@ class GhostWell(object):
         if 'col' not in data['location'] or data['location']['col'] is None:
             self.wel_variables.append('col')
 
-    def append_to_spd(self, spd_old, individual, variables_map):
+    def append_to_spd(self, spd, individual, variables_map):
         """Add candidate well data to SPD """
         # Define lay, row, col
         if 'lay' in variables_map[self.idx]:
@@ -39,7 +39,7 @@ class GhostWell(object):
         if self.once_appended:
             for period in self.data['pumping']['rates']:
                 np.put(
-                    spd_old[period],
+                    spd[period],
                     self.row_in_spd,
                     ([
                         lay, row, col, self.data['pumping']['rates'][period]
@@ -48,21 +48,24 @@ class GhostWell(object):
 
         else:
             # Initially append a ghost well
-            if spd_old[period] is None:
-                spd_old[period] = np.recarray()
+            if spd[period] is None:
+                spd[period] = np.recarray(
+                    0,
+                    dtype=[('k', int), ('i', int), ('j', int), ('flux', float)]
+                    )
+            self.row_in_spd = spd[period].shape()[0]
             for period in self.data['pumping']['rates']:
-                spd_old[period] = np.append(
-                    spd_old[period],
-                    np.array([
+                np.put(
+                    spd[period],
+                    self.row_in_spd,
+                    ([
                         lay, row, col, self.data['pumping']['rates'][period]
-                        ],
-                        dtype=spd_old.dtype)
-                    ).view(np.recarray)
+                    ])
+                    )
 
-                self.row_in_spd = spd_old[period].shape()[0]
                 self.once_appended = True
 
-        return spd_old
+        return spd
 
 
 def drop_iface(rec):

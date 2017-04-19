@@ -28,7 +28,7 @@ class ModflowOptimization(object):
             f=data['model_name'],
             model_ws=data['workspace']
             )
-        self.model_updated
+        self.model_updated = None
         self.stress_periods = data['time']['stress_periods']
         self.steady = data['time']['steady']
         self.ngen = data['ngen']
@@ -105,16 +105,15 @@ class ModflowOptimization(object):
 
         return individual,
 
-    def evaluate(self, individual):
-        """ Add well, ran model and evaluate results """
-        # Update WEL package
+    def update_well_package(self, individual):
+        """Update WEL package"""
         if 'WEL' in self.model_updated.get_package_list():
             wel_package = self.model_updated.get_package('WEL')
             spd = wel_package.stress_period_data.data
 
             for well in self.ghost_wells:
                 spd = well.append_to_spd(
-                    spd_old=spd,
+                    spd=spd,
                     individual=individual,
                     variables_map=self.variables_map
                     )
@@ -131,7 +130,7 @@ class ModflowOptimization(object):
                 }
             for well in self.ghost_wells:
                 spd = well.append_to_spd(
-                    spd_old=spd,
+                    spd=spd,
                     individual=individual,
                     variables_map=self.variables_map
                     )
@@ -142,18 +141,21 @@ class ModflowOptimization(object):
                 )
             wel_new.write_file()
 
+    def evaluate(self, individual):
+        """ Add well, ran model and evaluate results """
+        self.update_well_package(individual)
         # Run model
         silent = True
         pause = False
         report = False
 
-        success, buff = self.model.run_model(silent, pause, report)
+        success, buff = self.model_updated.run_model(silent, pause, report)
         # Read results
         if success:
             head_file_objects = flopy.utils.HeadFile(
                 os.path.join(
-                    self.model.model_ws,
-                    self.model.name + '.hds'
+                    self.model_updated.model_ws,
+                    self.model_updated.name + '.hds'
                     )
                 )
             heads_timestep = head_file_objects.get_data(kstpkper=(0, 0))[-1]
