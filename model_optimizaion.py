@@ -6,7 +6,7 @@ from deap import creator
 from deap import tools
 from deap import algorithms
 import flopy
-from utils_model_optimization import prepare_packages, drop_iface
+from utils_model_optimization import GhostWell prepare_packages, drop_iface
 
 
 """
