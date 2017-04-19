@@ -1,4 +1,69 @@
 import flopy
+import numpy as np
+
+class GhostWell(object):
+    """Well used in optimization process"""
+    def __init__(self, idx, data):
+        self.idx = idx
+        self.data = data
+        # Area bounding box
+        self.constrains = data['constrains']
+        self.row_in_spd = None
+        self.once_appended = False
+        # Variables to be optimized
+        self.wel_variables = []
+        if 'lay' not in data['location'] or data['location']['lay'] is None:
+            self.wel_variables.append('lay')
+        if 'row' not in data['location'] or data['location']['row'] is None:
+            self.wel_variables.append('row')
+        if 'col' not in data['location'] or data['location']['col'] is None:
+            self.wel_variables.append('col')
+
+    def append_to_spd(self, spd_old, individual, variables_map):
+        """Add candidate well data to SPD """
+        # Define lay, row, col
+        if 'lay' in variables_map[self.idx]:
+            lay = individual[variables_map[self.idx]['lay']]
+        else:
+            lay = self.data['location']['lay']
+        if 'row' in variables_map[self.idx]:
+            row = individual[variables_map[self.idx]['row']]
+        else:
+            row = self.data['location']['row']
+        if 'col' in variables_map[self.idx]:
+            col = individual[variables_map[self.idx]['col']]
+        else:
+            col = self.data['location']['col']
+
+        # Replace previousely appended ghost well with a new one
+        if self.once_appended:
+            for period in self.data['pumping']['rates']:
+                np.put(
+                    spd_old[period],
+                    self.row_in_spd,
+                    ([
+                        lay, row, col, self.data['pumping']['rates'][period]
+                    ])
+                    )
+
+        else:
+            # Initially append a ghost well
+            if spd_old[period] is None:
+                spd_old[period] = np.recarray()
+            for period in self.data['pumping']['rates']:
+                spd_old[period] = np.append(
+                    spd_old[period],
+                    np.array([
+                        lay, row, col, self.data['pumping']['rates'][period]
+                        ],
+                        dtype=spd_old.dtype)
+                    ).view(np.recarray)
+
+                self.row_in_spd = spd_old[period].shape()[0]
+                self.once_appended = True
+
+        return spd_old
+
 
 def drop_iface(rec):
     """
