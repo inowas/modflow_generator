@@ -11,13 +11,13 @@ class GhostWell(object):
         self.row_in_spd = None
         self.once_appended = False
         # Variables to be optimized
-        self.wel_variables = []
+        self.well_variables = []
         if 'lay' not in data['location'] or data['location']['lay'] is None:
-            self.wel_variables.append('lay')
+            self.well_variables.append('lay')
         if 'row' not in data['location'] or data['location']['row'] is None:
-            self.wel_variables.append('row')
+            self.well_variables.append('row')
         if 'col' not in data['location'] or data['location']['col'] is None:
-            self.wel_variables.append('col')
+            self.well_variables.append('col')
 
     def append_to_spd(self, spd, individual, variables_map):
         """Add candidate well data to SPD """
@@ -37,32 +37,32 @@ class GhostWell(object):
 
         # Replace previousely appended ghost well with a new one
         if self.once_appended:
-            for period in self.data['pumping']['rates']:
+            for period in self.data['flux']:
                 np.put(
                     spd[period],
                     self.row_in_spd,
                     ([
-                        lay, row, col, self.data['pumping']['rates'][period]
+                        (lay, row, col, self.data['flux'][period])
                     ])
                     )
 
         else:
             # Initially append a ghost well
-            if spd[period] is None:
-                spd[period] = np.recarray(
-                    0,
-                    dtype=[('k', int), ('i', int), ('j', int), ('flux', float)]
-                    )
-            self.row_in_spd = spd[period].shape()[0]
-            for period in self.data['pumping']['rates']:
-                np.put(
+            for period in self.data['flux']:
+                if spd[period] is None:
+                    spd[period] = np.recarray(
+                        0,
+                        dtype=[('k', 'i4'), ('i', 'i4'), ('j', 'i4'), ('flux', 'f4')]
+                        )
+                spd[period] = np.append(
                     spd[period],
-                    self.row_in_spd,
-                    ([
-                        lay, row, col, self.data['pumping']['rates'][period]
-                    ])
-                    )
+                    np.array(
+                        [(lay, row, col, self.data['flux'][period])],
+                        dtype=spd[period].dtype
+                        )
+                    ).view(np.recarray)
 
+                self.row_in_spd = len(spd[period]) - 1
                 self.once_appended = True
 
         return spd

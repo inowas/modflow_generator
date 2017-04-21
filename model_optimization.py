@@ -6,7 +6,7 @@ from deap import creator
 from deap import tools
 from deap import algorithms
 import flopy
-from utils_model_optimization import GhostWell prepare_packages, drop_iface
+from utils_model_optimization import GhostWell, prepare_packages, drop_iface
 
 
 """
@@ -34,7 +34,6 @@ class ModflowOptimization(object):
         self.ngen = data['ngen']
         self.popsize = data['popsize']
         self.control_layer = data['control_layer']
-        self.wells_bbox = data['wells_bbox']
         self.ghost_wells = [
             GhostWell(idx, well_data) for idx, well_data in enumerate(data['wells'])
             ]
@@ -50,6 +49,7 @@ class ModflowOptimization(object):
             self.stress_periods
             )
         self.model_updated.write_input()
+        self.model_updated.run_model()
         # Set reference head value
         head_file_name = os.path.join(self.model_updated.model_ws, self.model_updated.name)
         head_file_object = flopy.utils.HeadFile(head_file_name + '.hds')
@@ -58,7 +58,10 @@ class ModflowOptimization(object):
             mflay=self.control_layer,
             nodata=-9999
             )
+
         self.reference_head_mean = np.mean(reference_head, axis=0)
+        print(np.nanmean(self.reference_head_mean))
+
         head_file_object.close()
 
     def generate_candidate(self):
@@ -70,38 +73,40 @@ class ModflowOptimization(object):
             if 'lay' in well.well_variables:
                 candidate.append(random.randint(well.constrains['layer_min'],
                                                 well.constrains['layer_max']))
-                self.variables_map[well.idx]['lay'] = len(candidate)
-            elif 'row' in well.well_variables:
+                self.variables_map[well.idx]['lay'] = len(candidate) - 1
+            if 'row' in well.well_variables:
                 candidate.append(random.randint(well.constrains['row_min'],
                                                 well.constrains['row_max']))
-                self.variables_map[well.idx]['row'] = len(candidate)
-            elif 'col' in well.well_variables:
+                self.variables_map[well.idx]['row'] = len(candidate) - 1
+            if 'col' in well.well_variables:
                 candidate.append(random.randint(well.constrains['col_min'],
                                                 well.constrains['col_max']))
-                self.variables_map[well.idx]['col'] = len(candidate)
+                self.variables_map[well.idx]['col'] = len(candidate) - 1
 
         print(' '.join(['INITIAL CANDIDATE WELL:', str(candidate)]))
         return candidate
 
     def mutate(self, individual):
         """ Mutation of an individual """
-
-        for i, variable_idx in enumerate(self.variables_map):
-            if variable_idx[0] == 'lay':
-                individual[i] = random.randint(
-                    self.ghost_wells[variable_idx[1]].constrains['layer_min'],
-                    self.ghost_wells[variable_idx[1]].constrains['layer_min']
-                    )
-            elif variable_idx[0] == 'row':
-                individual[i] = random.randint(
-                    self.ghost_wells[variable_idx[1]].constrains['row_min'],
-                    self.ghost_wells[variable_idx[1]].constrains['row_min']
-                    )
-            elif variable_idx[0] == 'col':
-                individual[i] = random.randint(
-                    self.ghost_wells[variable_idx[1]].constrains['col_min'],
-                    self.ghost_wells[variable_idx[1]].constrains['col_min']
-                    )
+        i = 0
+        for well_key in enumerate(self.variables_map):
+            for variable_key in enumerate(self.variables_map):
+                if variable_key == 'lay':
+                    individual[i] = random.randint(
+                        self.ghost_wells[well_key].constrains['layer_min'],
+                        self.ghost_wells[well_key].constrains['layer_min']
+                        )
+                elif variable_key == 'row':
+                    individual[i] = random.randint(
+                        self.ghost_wells[well_key].constrains['row_min'],
+                        self.ghost_wells[well_key].constrains['row_min']
+                        )
+                elif variable_key == 'col':
+                    individual[i] = random.randint(
+                        self.ghost_wells[well_key].constrains['col_min'],
+                        self.ghost_wells[well_key].constrains['col_min']
+                        )
+                i += 1
 
         return individual,
 
