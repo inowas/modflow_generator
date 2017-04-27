@@ -1,14 +1,17 @@
 import sys
+import json
 import flopy
 from model_optimization import ModflowOptimization
 
-def main():
+def main(workspace, model_name):
     """ """
     data = {
-        'model_name': 'model_1.nam',
-        'workspace': 'models\\model_1',
-        'ngen': 50,
-        'popsize': 30,
+        'model_name': model_name + '.nam',
+        'workspace': workspace,
+        'ngen': 100,
+        'pop_size': 10,
+        'mutpb': 0.1,
+        'cxpb': 0.5,
         'control_layer': 0,
         'wells': [
             {
@@ -16,26 +19,24 @@ def main():
                     'lay': 0,
                     },
                 'flux': {
-                    0: 1000,
-                    1: 1000,
-                    2: 1000,
-                    3: 1000,
-                    4: 1000,
-                    5: 1000,
-                    6: 1000,
-                    7: 1000,
-                    8: 1000,
+                    0: 10000,
+                    1: 10000,
+                    2: 5000,
+                    3: 10000,
+                    4: 2000,
+                    5: 10000,
+                    6: 11000,
+                    7: 9000,
+                    8: 10000,
                     9: 1000
                     },
                 'constrains': {
                     'layer_min': 0,
                     'layer_max': 0,
                     'row_min': 0,
-                    'row_max': 100,
+                    'row_max': 50,
                     'col_min': 0,
-                    'col_max': 100,
-                    'rate_min': -1000,
-                    'rate_max': -500
+                    'col_max': 50
                     }
             },
             {
@@ -43,26 +44,24 @@ def main():
                     'lay': 0,
                     },
                 'flux': {
-                    0: 1000,
-                    1: 1000,
-                    2: 1000,
-                    3: 1000,
-                    4: 1000,
-                    5: 1000,
-                    6: 1000,
-                    7: 1000,
-                    8: 1000,
-                    9: 1000
+                    0: -5000,
+                    1: -5000,
+                    2: -5000,
+                    3: -8000,
+                    4: -9000,
+                    5: -3000,
+                    6: -5000,
+                    7: -6000,
+                    8: -7000,
+                    9: -8000
                     },
                 'constrains': {
                     'layer_min': 0,
                     'layer_max': 0,
                     'row_min': 0,
-                    'row_max': 100,
+                    'row_max': 50,
                     'col_min': 0,
-                    'col_max': 100,
-                    'rate_min': -1000,
-                    'rate_max': -500
+                    'col_max': 50
                     }
             }
             ],
@@ -75,6 +74,21 @@ def main():
     MO = ModflowOptimization(data)
     MO.initialize()
     hall_of_fame = MO.optimize_model()
-    print(hall_of_fame)
+    return list(hall_of_fame)
+
+
+
 if __name__ == '__main__':
-    main()
+    list_of_models_file = sys.argv[1]
+
+    results = {}
+    with open(list_of_models_file, 'r') as f:
+        list_of_models = json.load(f)['modelNames']
+
+    for i in list_of_models:
+        model_name = i
+        workspace = 'models\\' + i
+        results[model_name] = main(workspace, model_name)
+
+    with open('models\\optimization-results.json', 'w') as f:
+        json.dump(results, f)

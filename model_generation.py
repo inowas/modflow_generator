@@ -1,6 +1,6 @@
 # Procedural generation of Modflow groundawter
 # models
-
+import matplotlib.pyplot as plt
 import numpy as np 
 from scipy.spatial import ConvexHull
 from scipy.interpolate import Rbf
@@ -348,17 +348,17 @@ class ModelBoundary(object):
         for i in line_row_col:
             del i[-1]
         # generate number of segments for each boundary
-        nums_of_segments = self.rand_seg_nums(
+        self.nums_of_segments = self.rand_seg_nums(
             len(line_row_col),
             len(self.data_source.linear_boundaries)
             )
         # assign cells to each boundary type
         for idx, key in enumerate(self.data_source.linear_boundaries):
-            for i in range(nums_of_segments[idx]):
+            for i in range(self.nums_of_segments[idx]):
                 self.line_segments[key].extend(
                     line_row_col[i]
                     )
-            del line_row_col[:nums_of_segments[idx]]
+            del line_row_col[:self.nums_of_segments[idx]]
 
         return self.line_segments
 

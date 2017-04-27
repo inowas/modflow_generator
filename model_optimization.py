@@ -32,7 +32,9 @@ class ModflowOptimization(object):
         self.stress_periods = data['time']['stress_periods']
         self.steady = data['time']['steady']
         self.ngen = data['ngen']
-        self.popsize = data['popsize']
+        self.pop_size = data['pop_size']
+        self.mutpb = data['mutpb']
+        self.cxpb = data['cxpb']
         self.control_layer = data['control_layer']
         self.ghost_wells = [
             GhostWell(idx, well_data) for idx, well_data in enumerate(data['wells'])
@@ -60,7 +62,6 @@ class ModflowOptimization(object):
             )
 
         self.reference_head_mean = np.mean(reference_head, axis=0)
-        print(np.nanmean(self.reference_head_mean))
 
         head_file_object.close()
 
@@ -88,26 +89,41 @@ class ModflowOptimization(object):
 
     def mutate(self, individual):
         """ Mutation of an individual """
+        print('MUTATION_IN: ' + str(individual))
+        def mean_(min_, max_):
+            return (min_ + max_) / 2
+
+        def std_(min_, max_):
+            return (max_ - ((min_ + max_) / 2)) / 3
+
         i = 0
-        for well_key in enumerate(self.variables_map):
-            for variable_key in enumerate(self.variables_map):
+        for well_key in self.variables_map:
+            for variable_key in self.variables_map[well_key]:
                 if variable_key == 'lay':
                     individual[i] = random.randint(
                         self.ghost_wells[well_key].constrains['layer_min'],
-                        self.ghost_wells[well_key].constrains['layer_min']
+                        self.ghost_wells[well_key].constrains['layer_max']
                         )
                 elif variable_key == 'row':
-                    individual[i] = random.randint(
-                        self.ghost_wells[well_key].constrains['row_min'],
-                        self.ghost_wells[well_key].constrains['row_min']
+                    individual[i] = int(
+                        random.gauss(
+                            mean_(self.ghost_wells[well_key].constrains['row_min'],
+                                  self.ghost_wells[well_key].constrains['row_max']),
+                            std_(self.ghost_wells[well_key].constrains['row_min'],
+                                 self.ghost_wells[well_key].constrains['row_max']),
                         )
+                    )
                 elif variable_key == 'col':
-                    individual[i] = random.randint(
-                        self.ghost_wells[well_key].constrains['col_min'],
-                        self.ghost_wells[well_key].constrains['col_min']
+                    individual[i] = int(
+                        random.gauss(
+                            mean_(self.ghost_wells[well_key].constrains['col_min'],
+                                  self.ghost_wells[well_key].constrains['col_max']),
+                            std_(self.ghost_wells[well_key].constrains['col_min'],
+                                 self.ghost_wells[well_key].constrains['col_max']),
                         )
+                    )
                 i += 1
-
+        print('MUTATION_OUT: ' + str(individual))
         return individual,
 
     def update_well_package(self, individual):
@@ -122,7 +138,9 @@ class ModflowOptimization(object):
                     individual=individual,
                     variables_map=self.variables_map
                     )
-
+            # remove old wel package
+            self.model_updated.remove_package('WEL')
+            # write new wel package
             wel_new = flopy.modflow.ModflowWel(
                 self.model_updated,
                 stress_period_data=spd
@@ -139,7 +157,9 @@ class ModflowOptimization(object):
                     individual=individual,
                     variables_map=self.variables_map
                     )
-
+            # remove old wel package
+            self.model_updated.remove_package('WEL')
+            # write new wel package
             wel_new = flopy.modflow.ModflowWel(
                 self.model_updated,
                 stress_period_data=spd
@@ -157,20 +177,25 @@ class ModflowOptimization(object):
         success, buff = self.model_updated.run_model(silent, pause, report)
         # Read results
         if success:
-            head_file_objects = flopy.utils.HeadFile(
+            head_file_object = flopy.utils.HeadFile(
                 os.path.join(
                     self.model_updated.model_ws,
                     self.model_updated.name + '.hds'
                     )
                 )
-            heads_timestep = head_file_objects.get_data(kstpkper=(0, 0))[-1]
-            fitness = np.mean(heads_timestep - self.reference_head_mean),
+            new_reference_head = head_file_object.get_alldata(
+                mflay=self.control_layer,
+                nodata=-9999
+                )
+            new_reference_head_mean = np.mean(new_reference_head, axis=0)
+
+            fitness = np.nanmean(new_reference_head_mean - self.reference_head_mean),
         else:
             fitness = -9999,
 
         return fitness
 
-    def optimize_model(self, ngen=30, cxpb=0.5, mutpb=0.1, pop_size=30):
+    def optimize_model(self):
         """
         DEAP Optimization
         """
@@ -199,7 +224,7 @@ class ModflowOptimization(object):
         toolbox.register("mutate", self.mutate)
         toolbox.register("select", tools.selTournament, tournsize=3)
 
-        population = toolbox.population(n=pop_size)
+        population = toolbox.population(n=self.pop_size)
 
         stats = tools.Statistics(lambda ind: ind.fitness.values)
         stats.register("mean", np.mean, axis=0)
@@ -211,8 +236,11 @@ class ModflowOptimization(object):
 
         self.result, self.log = algorithms.eaSimple(
             population, toolbox,
-            cxpb=cxpb, mutpb=mutpb,
-            ngen=ngen, stats=stats,
-            halloffame=self.hall_of_fame, verbose=False
+            cxpb=self.cxpb, mutpb=self.mutpb,
+            ngen=self.ngen, stats=stats,
+            halloffame=self.hall_of_fame,
+            verbose=False
             )
+        print(self.result)
+        print(self.log)
         return self.hall_of_fame

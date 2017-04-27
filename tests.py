@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import flopy
 import matplotlib.pyplot as plt
-from model_generator import Solver, Model, ActiveGrid, \
+from model_generation import Solver, Model, ActiveGrid, \
                             ModelTime, DataSource, ModelBoundary, \
                             VectorSource, ModelLayer, PropSource
 
@@ -13,9 +13,9 @@ class TestModelGenerator(unittest.TestCase):
     def setUp(self):
         # Model paramenters
         self.xmin = 0
-        self.xmax = 10
+        self.xmax = 100
         self.ymin = 0
-        self.ymax = 10
+        self.ymax = 100
         self.nlay = 1
         self.nper = 100
         self.perlen = [1] * self.nper
@@ -141,6 +141,71 @@ class TestModelGenerator(unittest.TestCase):
         self.riv = None
         self.wel = None
 
+    def test_print_results(self):
+        points = self.vector_source.convex_hull.points
+        hull = self.vector_source.convex_hull
+        n_segments = self.model_boundary.nums_of_segments
+
+        plt.plot(points[:,0], points[:,1], 'o')
+        i = 0
+        btype = 0
+        for simplex in hull.simplices:
+            if i >= n_segments[btype]:
+                btype += 1
+                i = 0
+            if btype == 0:
+                nfl = plt.plot(points[simplex, 0], points[simplex, 1], 'k-', label = 'No flow')
+            elif btype == 1:
+                chd = plt.plot(points[simplex, 0], points[simplex, 1], 'r-', label = 'Constant head')
+            elif btype == 2:
+                riv = plt.plot(points[simplex, 0], points[simplex, 1], 'g-', label = 'River')
+            i += 1
+        plt.xlim(self.xmin, self.xmax)
+        plt.ylim(self.ymin, self.ymax)
+        plt.xlabel('x, m')
+        plt.ylabel('y, m')
+        plt.title('Generated random points, convex hull and boundary types')
+
+        plt.show()
+
+        mask = np.flipud(self.active_grid.ibound == 0)
+
+        layer = self.model_layer.properties['hk'][0]
+        layer[mask] = np.nan
+        plt.imshow(
+            layer, interpolation='nearest'
+            )
+        plt.xlabel('columns')
+        plt.ylabel('rows')
+        plt.title('Generated hydraulic cunductivity')
+        bar = plt.colorbar()
+        bar.set_label('Kx, m')
+        plt.show()
+
+        layer = self.model_layer.properties['top'][0]
+        layer[mask] = np.nan
+        plt.imshow(
+            layer, interpolation='nearest'
+            )
+        plt.xlabel('columns')
+        plt.ylabel('rows')
+        plt.title('Generated model top elevation')
+        bar = plt.colorbar()
+        bar.set_label('Elevation, m')
+        plt.show()
+
+        layer = self.model_layer.properties['botm'][0]
+        layer[mask] = np.nan
+        plt.imshow(
+            layer, interpolation='nearest'
+            )
+        plt.xlabel('columns')
+        plt.ylabel('rows')
+        plt.title('Generated bottom elevation of the first layer')
+        bar = plt.colorbar()
+        bar.set_label('Elevation, m')
+        plt.show()
+
     # def test_random_points(self):
     #     """
     #     Testing random points and convex hull generation
@@ -175,8 +240,8 @@ class TestModelGenerator(unittest.TestCase):
     #             if self.active_grid.bound_ibound[i][j] == 1:
     #                 self.assertEqual(self.active_grid.ibound[i][j], 1)
 
-    #     # plt.imshow(self.active_grid.bound_ibound, interpolation="nearest")
-    #     # plt.show()
+    #     plt.imshow(self.active_grid.bound_ibound, interpolation="nearest")
+    #     plt.show()
 
     # def test_boundary_segments(self):
     #     """ Validate model boundaries' segments """
@@ -228,26 +293,17 @@ class TestModelGenerator(unittest.TestCase):
 
     # def test_prop_rasters(self):
     #     """ Validate generated property rasters """
-    #     plt.imshow(
-    #         self.active_grid.ibound, interpolation='nearest'
-    #         )
-    #     plt.colorbar()
-    #     plt.show()
-    #     plt.imshow(
-    #         self.model_layer.properties['hk'], interpolation='nearest'
-    #         )
-    #     plt.colorbar()
-    #     plt.show()
+        
     #     plt.imshow(
     #         self.model_layer.properties['botm'], interpolation='nearest'
     #         )
     #     plt.colorbar()
     #     plt.show()
 
-    def test_model(self):
-        self.mf.write_input()
-        # self.mf.plot()
-        success, buff = self.mf.run_model()
+    # def test_model(self):
+    #     self.mf.write_input()
+    #     self.mf.plot()
+    #     success, buff = self.mf.run_model()
 
 
 

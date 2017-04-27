@@ -1,3 +1,5 @@
+import sys
+import json
 import shutil
 from model_generation import Solver, Model, ActiveGrid, \
                              ModelTime, DataSource, ModelBoundary, \
@@ -96,7 +98,9 @@ class ModflowModel(object):
             )
         for i in output:
             print(i)
-def main():
+        return success
+
+def main(workspace, model_name, nper):
     """ """
     model_data = {
         'xmin': 0,
@@ -104,7 +108,7 @@ def main():
         'ymin': 0,
         'ymax': 10,
         'nlay': 1,
-        'nper': 10,
+        'nper': nper,
         'perlen': [1] * 10,
         'nstp': [1] * 10,
         'steady': False,
@@ -134,8 +138,8 @@ def main():
         'iter1': 100,
         'hclose': 0.1,
         'rclose': 0.1,
-        'model_name': 'model_1',
-        'workspace': 'models\\' + 'model_1',
+        'model_name': model_name,
+        'workspace': workspace,
         'version': 'mf2005',
         'exe_name': 'mf2005',
         'verbose': True
@@ -150,9 +154,21 @@ def main():
 
     model = ModflowModel(model_data)
     model.write_files()
-    model.run_model()
-
-
+    success = model.run_model()
+    return success
 
 if __name__ == '__main__':
-    main()
+    number_of_models = sys.argv[1]
+
+    models = {'modelNames': []}
+
+    for i in range(int(number_of_models)):
+        model_name = 'model_' + str(i)
+        workspace = 'models\\' + 'model_' + str(i)
+        nper = 10
+        success = main(workspace, model_name, nper)
+        if success:
+            models['modelNames'].append(model_name)
+
+    with open('models\\models.json', 'w') as f:
+        json.dump(models, f)
