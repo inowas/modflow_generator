@@ -189,11 +189,11 @@ class ModflowOptimization(object):
                 )
             new_reference_head_mean = np.mean(new_reference_head, axis=0)
 
-            fitness = np.nanmean(new_reference_head_mean - self.reference_head_mean),
+            fitness = np.nanmean(new_reference_head_mean - self.reference_head_mean)
         else:
-            fitness = -9999,
+            fitness = -9999
 
-        return fitness
+        return fitness,
 
     def optimize_model(self):
         """
@@ -203,22 +203,9 @@ class ModflowOptimization(object):
         creator.create("Individual", list, fitness=creator.FitnessMax)
 
         toolbox = base.Toolbox()
-        toolbox.register(
-            "candidate",
-            self.generate_candidate
-            )
-        toolbox.register(
-            "individual",
-            tools.initIterate,
-            creator.Individual,
-            toolbox.candidate
-            )
-        toolbox.register(
-            "population",
-            tools.initRepeat,
-            list,
-            toolbox.individual
-            )
+        toolbox.register("candidate", self.generate_candidate)
+        toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.candidate)
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
         toolbox.register("mate", tools.cxOnePoint)
         toolbox.register("evaluate", self.evaluate)
         toolbox.register("mutate", self.mutate)

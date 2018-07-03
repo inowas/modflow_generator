@@ -21,8 +21,10 @@ class TestModelGenerator(unittest.TestCase):
         self.perlen = [1] * self.nper
         self.nstp = [1] * self.nper
         self.steady = False
-        self.nx = 50
-        self.ny = 50
+        self.nx = 100
+        self.ny = 100
+        self.dx = (self.xmax - self.xmin) / self.nx
+        self.dy = (self.ymax - self.ymin) / self.ny
         self.n_points = 10
         self.n_dim = 2
         self.b_types = {
@@ -142,10 +144,16 @@ class TestModelGenerator(unittest.TestCase):
         self.wel = None
 
     def test_print_results(self):
+        # PLOT TIME SERIES
+        plt.plot(self.data_source.b_data['CHD'])
+        plt.xlabel('Stress periods')
+        plt.ylabel('Head, m')
+        plt.title('Generated time-variant head boundary series')
+        plt.show()
+        # PLOT POINTS AND CONVEX HULL
         points = self.vector_source.convex_hull.points
         hull = self.vector_source.convex_hull
         n_segments = self.model_boundary.nums_of_segments
-
         plt.plot(points[:,0], points[:,1], 'o')
         i = 0
         btype = 0
@@ -165,11 +173,9 @@ class TestModelGenerator(unittest.TestCase):
         plt.xlabel('x, m')
         plt.ylabel('y, m')
         plt.title('Generated random points, convex hull and boundary types')
-
         plt.show()
-
+        # PLOT PROPERTIES RASTERS
         mask = np.flipud(self.active_grid.ibound == 0)
-
         layer = self.model_layer.properties['hk'][0]
         layer[mask] = np.nan
         plt.imshow(
@@ -206,6 +212,35 @@ class TestModelGenerator(unittest.TestCase):
         bar.set_label('Elevation, m')
         plt.show()
 
+        # PLOT GRID
+        mask = self.active_grid.ibound == 1
+        for idx, i in enumerate(self.active_grid.ibound):
+            for jdx, j in enumerate(i):
+                x1 = self.xmin + jdx * self.dx
+                x2 = x1 + self.dx
+                y1 = self.ymin + idx * self.dy
+                y2 = y1 + self.dy
+                if mask[idx][jdx]:
+                    plt.plot([x1, x2, x2, x1, x1],[y1, y1, y2, y2, y1], color = 'k')
+        plt.title('Example model grid and resulting locations of wells')
+        plt.show()
+        # PLOT SURFACE
+        from mpl_toolkits.mplot3d import Axes3D
+        from scipy.interpolate import Rbf
+        x = [1, 100, 10, 90, 40]
+        y = [2, 99, 99, 5, 40]
+        z = [.05, .07, .1, .1, .5]
+        rbfi = Rbf(x, y, z)
+        grid_x, grid_y = np.meshgrid(np.arange(self.nx), np.arange(self.ny))
+        grid_z = rbfi(grid_x, grid_y)
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_surface(grid_x, grid_y, grid_z)
+        plt.title('Hypothetical probability distribution of optimal well location over model domain')
+        ax.set_zlabel('Probability')
+        ax.set_xlabel('Columns')
+        ax.set_ylabel('Rows')
+        plt.show()
     # def test_random_points(self):
     #     """
     #     Testing random points and convex hull generation

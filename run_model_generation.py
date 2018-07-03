@@ -86,31 +86,42 @@ class ModflowModel(object):
         self.riv = self.model.get_riv(self.mf)
         self.wel = self.model.get_wel(self.mf)
         self.oc = self.model.get_oc(self.mf)
+        self.mt = None
+
+        self.lmt = self.model.get_lmt(self.mf)
+        self.mt = self.model.get_mt(self.mf)
+        self.btn = self.model.get_btn(self.mt)
+        self.adv = self.model.get_adv(self.mt)
+        self.gcg = self.model.get_gcg(self.mt)
+        self.ssm = self.model.get_ssm(self.mt, model_data['concentration'], model_data['itype'])
 
     def write_files(self):
         self.mf.write_input()
+        if self.mt:
+            self.mt.write_input()
 
     def run_model(self):
         success, output = self.mf.run_model(
-            silent=True,
+            silent=False,
             pause=False,
             report=True
             )
         for i in output:
             print(i)
+        self.mt.run_model()
         return success
 
 def main(workspace, model_name, nper):
     """ """
     model_data = {
         'xmin': 0,
-        'xmax': 10,
+        'xmax': 1000,
         'ymin': 0,
-        'ymax': 10,
+        'ymax': 1000,
         'nlay': 1,
         'nper': nper,
-        'perlen': [1] * 10,
-        'nstp': [1] * 10,
+        'perlen': [100] * nper,
+        'nstp': [1] * nper,
         'steady': False,
         'nx': 50,
         'ny': 50,
@@ -119,11 +130,11 @@ def main(workspace, model_name, nper):
         'b_types': {
             'NFL':{},
             'CHD': {'min': 100, 'max': 120,
-                    'periods': [2, 5, 6]},
+                    'periods': [2, 3]},
             'RIV': {'min': 80, 'max': 90,
-                    'periods': [3, 4, 6]},
+                    'periods': [3, 4]},
             'WEL': {'min': 1000, 'max': 5000,
-                    'periods': [2, 5]},
+                    'periods': [2, 3]},
             },
         'layer_props_params': {
             'hk': {'min': 0.1, 'max': 10.},
@@ -132,6 +143,8 @@ def main(workspace, model_name, nper):
             'top': {'min': 100, 'max': 150},
             'botm': {'min': 0, 'max': 50},
             },
+        'concentration': 10,
+        'itype': 2,
         'headtol': 0.01,
         'maxiterout': 100,
         'mxiter': 100,
@@ -165,7 +178,7 @@ if __name__ == '__main__':
     for i in range(int(number_of_models)):
         model_name = 'model_' + str(i)
         workspace = 'models\\' + 'model_' + str(i)
-        nper = 10
+        nper = 5
         success = main(workspace, model_name, nper)
         if success:
             models['modelNames'].append(model_name)

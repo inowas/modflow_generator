@@ -126,9 +126,66 @@ class Model(object):
 
     def get_oc(self, mf):
         oc = flopy.modflow.ModflowOc(
-            mf,
+            mf
         )
         return oc
+
+    def get_lmt(self, mf):
+        lmt = flopy.modflow.ModflowLmt(
+            mf,
+            output_file_name='mt3d_link.ftl'
+        )
+        return lmt
+
+    def get_mt(self, mf):
+        mt = flopy.mt3d.Mt3dms(
+            modflowmodel=mf,
+            modelname='mt_'+self.model_name,
+            model_ws=self.workspace,
+            version='mt3d-usgs',
+            ftlfilename='mt3d_link.ftl'
+        )
+        return mt
+
+    def get_btn(self, mt):
+        btn = flopy.mt3d.Mt3dBtn(
+            mt,
+            dt0=100
+            
+        )
+        return btn
+
+    def get_adv(self, mt):
+        adv = flopy.mt3d.Mt3dAdv(
+            mt,
+            mixelm=0,
+            nadvfd=1
+        )
+        return adv
+
+    def get_gcg(self, mt):
+        gcg = flopy.mt3d.Mt3dGcg(
+            mt
+        )
+        return gcg
+
+    def get_ssm(self, mt, conc, itype):
+        if len(self.model_boundary.boundaries_spd['WEL'][0]) == 0:
+            return None
+
+        wel_spd = self.model_boundary.boundaries_spd['WEL']
+        spd = deepcopy(wel_spd)
+        for period in spd.values():
+            for well in period:
+                well[-1] = conc
+                well.append(itype)
+
+        ssm = flopy.mt3d.Mt3dSsm(
+            mt,
+            stress_period_data=spd
+        )
+ 
+        return ssm
 
 
 class Solver(object):
